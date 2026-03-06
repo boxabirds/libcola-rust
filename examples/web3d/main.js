@@ -77,42 +77,44 @@ function setupLayout(meshType, detail, idealLength) {
   }
   layout.setIdealEdgeLength(idealLength);
 
-  updateGPU();
+  updateGPU(false);
 }
 
 function stepLayout() {
   if (!layout || converged) return;
 
-  const result = layout.runOnce();
+  layout.stepOnce();
   iterationCount++;
 
-  for (let i = 0; i < nodeCount; i++) {
-    positions[i * 3] = result.getX(i);
-    positions[i * 3 + 1] = result.getY(i);
-    positions[i * 3 + 2] = result.getZ(i);
+  // Bulk position read — single WASM call, no per-node overhead
+  const posArray = layout.getPositions();
+  for (let i = 0; i < posArray.length; i++) {
+    positions[i] = posArray[i];
   }
-  result.free();
 
   const MAX_ITERATIONS = 500;
   if (iterationCount >= MAX_ITERATIONS) {
     converged = true;
   }
 
-  updateGPU();
+  updateGPU(converged);
 }
 
-function updateGPU() {
+function updateGPU(includeEdges) {
   // Filled triangular facets
   const { data: faceData, vertexCount } = buildFaceVertices(
     positions, faces, FACE_COLOR_COOL, FACE_COLOR_WARM,
   );
   renderer.updateFaces(faceData, vertexCount);
 
-  // Thin dark wireframe edges
-  const edgeData = buildEdgeInstances(positions, edges, edgeRadius, EDGE_COLOR);
-  renderer.updateEdgeInstances(edgeData, edges.length);
+  // Wireframe edges: skip during animation (expensive to rebuild), show when converged
+  if (includeEdges) {
+    const edgeData = buildEdgeInstances(positions, edges, edgeRadius, EDGE_COLOR);
+    renderer.updateEdgeInstances(edgeData, edges.length);
+  } else {
+    renderer.updateEdgeInstances(new Float32Array(0), 0);
+  }
 
-  // No vertex spheres — faces are the visual
   renderer.updateNodeInstances(new Float32Array(0), 0);
 }
 

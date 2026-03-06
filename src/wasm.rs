@@ -789,7 +789,7 @@ impl ColaLayout3D {
         self.inner_layout = Some(layout);
     }
 
-    fn build_result(&self) -> LayoutResult3D {
+    fn build_result(&self, include_stress: bool) -> LayoutResult3D {
         let layout = self.inner_layout.as_ref().unwrap();
         let n = self.nodes.len();
         let bb = layout.bounding_boxes();
@@ -802,10 +802,15 @@ impl ColaLayout3D {
             data.push(bb[i].height());
             data.push(self.nodes[i].depth);
         }
+        let stress = if include_stress {
+            layout.compute_stress(None)
+        } else {
+            0.0
+        };
         LayoutResult3D {
             data,
             node_count: n,
-            stress: layout.compute_stress(None),
+            stress,
         }
     }
 
@@ -813,7 +818,7 @@ impl ColaLayout3D {
     pub fn run(&mut self) -> LayoutResult3D {
         self.ensure_layout();
         self.inner_layout.as_mut().unwrap().run();
-        self.build_result()
+        self.build_result(true)
     }
 
     /// Run a single iteration (stateful — maintains layout between calls).
@@ -821,6 +826,30 @@ impl ColaLayout3D {
     pub fn run_once(&mut self) -> LayoutResult3D {
         self.ensure_layout();
         self.inner_layout.as_mut().unwrap().run_once(true, true);
-        self.build_result()
+        self.build_result(false)
+    }
+
+    /// Get flat position array [x0,y0,z0, x1,y1,z1, ...] without allocating a full result.
+    #[wasm_bindgen(js_name = "getPositions")]
+    pub fn get_positions(&self) -> Vec<f64> {
+        let layout = self.inner_layout.as_ref().unwrap();
+        let n = self.nodes.len();
+        let mut pos = Vec::with_capacity(n * 3);
+        let x = layout.x();
+        let y = layout.y();
+        let z = layout.z();
+        for i in 0..n {
+            pos.push(x[i]);
+            pos.push(y[i]);
+            pos.push(z[i]);
+        }
+        pos
+    }
+
+    /// Run one iteration without building a result object.
+    #[wasm_bindgen(js_name = "stepOnce")]
+    pub fn step_once(&mut self) {
+        self.ensure_layout();
+        self.inner_layout.as_mut().unwrap().run_once(true, true);
     }
 }
