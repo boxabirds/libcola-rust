@@ -145,24 +145,25 @@
     <h2>3D Graph Layout</h2>
 
     <div class="control-group">
-      <label>Graph type</label>
-      <select id="graphType">
-        <option value="random" selected>Random</option>
-        <option value="grid">Grid</option>
-        <option value="tree">Tree</option>
-        <option value="cycle">Cycle</option>
-        <option value="dense">Dense</option>
+      <label>Shape</label>
+      <select id="meshType">
+        <option value="sphere" selected>Sphere</option>
+        <option value="torus">Torus</option>
+        <option value="cube">Cube</option>
+        <option value="cylinder">Cylinder</option>
+        <option value="grid">Grid Sheet</option>
+        <option value="octahedron">Octahedron</option>
       </select>
     </div>
 
     <div class="control-group">
-      <label>Nodes <span class="range-value" id="nodeCountLabel">30</span></label>
-      <input type="range" id="nodeCount" min="4" max="200" value="30" step="1">
+      <label>Detail <span class="range-value" id="detailLabel">50</span></label>
+      <input type="range" id="detail" min="6" max="200" value="50" step="1">
     </div>
 
     <div class="control-group">
-      <label>Ideal edge length <span class="range-value" id="idealLengthLabel">60</span></label>
-      <input type="range" id="idealLength" min="20" max="200" value="60" step="5">
+      <label>Edge length <span class="range-value" id="idealLengthLabel">40</span></label>
+      <input type="range" id="idealLength" min="10" max="120" value="40" step="5">
     </div>
 
     <div class="btn-row">
@@ -174,7 +175,7 @@
   </div>
 
   <div id="title">
-    <strong>libcola-rust</strong> 3D stress majorization &middot;
+    <strong>libcola-rust</strong> 3D mesh reconstruction via stress majorization &middot;
     <a href="../web/index.html">2D demos</a>
   </div>
 

@@ -1,12 +1,11 @@
-// 3D WebGPU demo: graph layout with libcola WASM solver.
+// 3D WebGPU demo: mesh structures reconstructed by stress majorization.
 
 import { Renderer, buildNodeInstances, buildEdgeInstances } from './renderer.js';
 import { OrbitCamera } from './camera.js';
+import { icosphere, torus, cube, gridSheet, octahedron, cylinder, scramble, meanEdgeLength } from './meshes.js';
 
-const NODE_RADIUS = 6;
-const EDGE_RADIUS = 1.5;
-const DEFAULT_IDEAL_EDGE_LENGTH = 60;
-const DEFAULT_NODE_COUNT = 30;
+const DEFAULT_IDEAL_EDGE_LENGTH = 40;
+const DEFAULT_DETAIL = 50;
 const NODE_SIZE = 10; // width/height/depth for solver
 
 // Palette: soft saturated colors for nodes
@@ -31,139 +30,43 @@ let running = true;
 let converged = false;
 let iterationCount = 0;
 
-// --- Graph generators ---
+// Rendering sizes scale with mesh density
+let nodeRadius = 4;
+let edgeRadius = 1;
 
-function randomGraph(n, edgeProbability = 0.08) {
-  const pos = [];
-  const edgeList = [];
-  const SPREAD = 200;
-  for (let i = 0; i < n; i++) {
-    pos.push(
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-    );
-  }
-  // Ensure connected: chain
-  for (let i = 1; i < n; i++) {
-    edgeList.push([i - 1, i]);
-  }
-  // Random extra edges
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 2; j < n; j++) {
-      if (Math.random() < edgeProbability) edgeList.push([i, j]);
-    }
-  }
-  return { positions: pos, edges: edgeList, count: n };
-}
-
-function gridGraph(side) {
-  const n = side * side;
-  const pos = [];
-  const edgeList = [];
-  const SPREAD = 200;
-  for (let i = 0; i < n; i++) {
-    pos.push(
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-    );
-  }
-  for (let r = 0; r < side; r++) {
-    for (let c = 0; c < side; c++) {
-      const idx = r * side + c;
-      if (c + 1 < side) edgeList.push([idx, idx + 1]);
-      if (r + 1 < side) edgeList.push([idx, idx + side]);
-    }
-  }
-  return { positions: pos, edges: edgeList, count: n };
-}
-
-function treeGraph(n) {
-  const pos = [];
-  const edgeList = [];
-  const SPREAD = 300;
-  for (let i = 0; i < n; i++) {
-    pos.push(
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-    );
-  }
-  for (let i = 1; i < n; i++) {
-    const parent = Math.floor(Math.random() * i);
-    edgeList.push([parent, i]);
-  }
-  return { positions: pos, edges: edgeList, count: n };
-}
-
-function cycleGraph(n) {
-  const pos = [];
-  const edgeList = [];
-  // Spherical initialization
-  for (let i = 0; i < n; i++) {
-    const phi = Math.acos(1 - 2 * (i + 0.5) / n);
-    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
-    const SPHERE_RADIUS = 100;
-    pos.push(
-      SPHERE_RADIUS * Math.sin(phi) * Math.cos(theta),
-      SPHERE_RADIUS * Math.cos(phi),
-      SPHERE_RADIUS * Math.sin(phi) * Math.sin(theta),
-    );
-  }
-  for (let i = 0; i < n; i++) {
-    edgeList.push([i, (i + 1) % n]);
-  }
-  return { positions: pos, edges: edgeList, count: n };
-}
-
-function denseGraph(n) {
-  const pos = [];
-  const edgeList = [];
-  const SPREAD = 150;
-  for (let i = 0; i < n; i++) {
-    pos.push(
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-      (Math.random() - 0.5) * SPREAD,
-    );
-  }
-  const TARGET_DEGREE = 4;
-  // Chain first
-  for (let i = 1; i < n; i++) edgeList.push([i - 1, i]);
-  // Random edges to target degree
-  const degree = new Array(n).fill(0);
-  for (const [a, b] of edgeList) { degree[a]++; degree[b]++; }
-  for (let i = 0; i < n; i++) {
-    while (degree[i] < TARGET_DEGREE) {
-      const j = Math.floor(Math.random() * n);
-      if (j !== i) {
-        edgeList.push([i, j]);
-        degree[i]++;
-        degree[j]++;
-      }
-    }
-  }
-  return { positions: pos, edges: edgeList, count: n };
-}
+// --- Mesh generators ---
 
 const GENERATORS = {
-  random: (n) => randomGraph(n),
-  grid: (n) => gridGraph(Math.max(2, Math.round(Math.sqrt(n)))),
-  tree: (n) => treeGraph(n),
-  cycle: (n) => cycleGraph(n),
-  dense: (n) => denseGraph(n),
+  sphere:   (n) => icosphere(n),
+  torus:    (n) => torus(n),
+  cube:     (n) => cube(n),
+  cylinder: (n) => cylinder(n),
+  grid:     (n) => gridSheet(n),
+  octahedron: () => octahedron(),
 };
 
 // --- Layout setup ---
 
-function setupLayout(graphType, n, idealLength) {
-  const gen = GENERATORS[graphType] || GENERATORS.random;
-  const graph = gen(n);
+function setupLayout(meshType, detail, idealLength) {
+  const gen = GENERATORS[meshType] || GENERATORS.sphere;
+  const mesh = gen(detail);
 
-  positions = graph.positions;
-  edges = graph.edges;
-  nodeCount = graph.count;
+  nodeCount = mesh.nodeCount;
+  edges = mesh.edges;
+
+  // Scale rendering sizes inversely with density
+  const BASE_NODE_RADIUS = 3;
+  const BASE_EDGE_RADIUS = 0.8;
+  const DENSITY_REFERENCE = 40;
+  const scaleFactor = Math.sqrt(DENSITY_REFERENCE / Math.max(1, nodeCount));
+  nodeRadius = BASE_NODE_RADIUS * Math.max(0.3, scaleFactor);
+  edgeRadius = BASE_EDGE_RADIUS * Math.max(0.2, scaleFactor);
+
+  // Scramble positions into a compact ball
+  const SCRAMBLE_RADIUS_FACTOR = 0.4;
+  const scrambleRadius = idealLength * SCRAMBLE_RADIUS_FACTOR * Math.sqrt(nodeCount / 10);
+  positions = scramble(nodeCount, scrambleRadius);
+
   converged = false;
   iterationCount = 0;
 
@@ -192,7 +95,6 @@ function stepLayout() {
   const result = layout.runOnce();
   iterationCount++;
 
-  // Extract positions from result
   for (let i = 0; i < nodeCount; i++) {
     positions[i * 3] = result.getX(i);
     positions[i * 3 + 1] = result.getY(i);
@@ -214,10 +116,10 @@ function updateGPU() {
   for (let i = 0; i < nodeCount; i++) {
     colors.push(PALETTE[i % PALETTE.length]);
   }
-  const nodeData = buildNodeInstances(positions, nodeCount, NODE_RADIUS, colors);
+  const nodeData = buildNodeInstances(positions, nodeCount, nodeRadius, colors);
   renderer.updateNodeInstances(nodeData, nodeCount);
 
-  const edgeData = buildEdgeInstances(positions, edges, EDGE_RADIUS, EDGE_COLOR);
+  const edgeData = buildEdgeInstances(positions, edges, edgeRadius, EDGE_COLOR);
   renderer.updateEdgeInstances(edgeData, edges.length);
 }
 
@@ -273,51 +175,50 @@ async function main() {
   overlay.style.display = 'none';
 
   // Controls
-  const graphSelect = document.getElementById('graphType');
-  const nodeSlider = document.getElementById('nodeCount');
-  const nodeLabel = document.getElementById('nodeCountLabel');
+  const meshSelect = document.getElementById('meshType');
+  const detailSlider = document.getElementById('detail');
+  const detailLabel = document.getElementById('detailLabel');
   const lengthSlider = document.getElementById('idealLength');
   const lengthLabel = document.getElementById('idealLengthLabel');
   const playBtn = document.getElementById('playBtn');
   const resetBtn = document.getElementById('resetBtn');
 
-  nodeSlider.value = DEFAULT_NODE_COUNT;
-  nodeLabel.textContent = DEFAULT_NODE_COUNT;
+  detailSlider.value = DEFAULT_DETAIL;
+  detailLabel.textContent = DEFAULT_DETAIL;
   lengthSlider.value = DEFAULT_IDEAL_EDGE_LENGTH;
   lengthLabel.textContent = DEFAULT_IDEAL_EDGE_LENGTH;
 
-  function resetGraph() {
+  function resetMesh() {
     setupLayout(
-      graphSelect.value,
-      parseInt(nodeSlider.value),
+      meshSelect.value,
+      parseInt(detailSlider.value),
       parseInt(lengthSlider.value),
     );
     running = true;
     playBtn.textContent = 'Pause';
   }
 
-  nodeSlider.addEventListener('input', () => {
-    nodeLabel.textContent = nodeSlider.value;
+  detailSlider.addEventListener('input', () => {
+    detailLabel.textContent = detailSlider.value;
   });
   lengthSlider.addEventListener('input', () => {
     lengthLabel.textContent = lengthSlider.value;
   });
 
-  graphSelect.addEventListener('change', resetGraph);
-  resetBtn.addEventListener('click', resetGraph);
+  meshSelect.addEventListener('change', resetMesh);
+  resetBtn.addEventListener('click', resetMesh);
 
   playBtn.addEventListener('click', () => {
     if (converged) {
-      // Restart
-      resetGraph();
+      resetMesh();
     } else {
       running = !running;
       playBtn.textContent = running ? 'Pause' : 'Play';
     }
   });
 
-  // Initial graph
-  resetGraph();
+  // Initial mesh
+  resetMesh();
 
   // Animation loop
   let lastTime = 0;
@@ -333,12 +234,12 @@ async function main() {
 
     // Status
     if (converged) {
-      statusEl.textContent = `Converged (${iterationCount} iterations)`;
+      statusEl.textContent = `Converged (${iterationCount} iters) — ${nodeCount} nodes, ${edges.length} edges`;
       playBtn.textContent = 'Restart';
     } else if (running) {
-      statusEl.textContent = `Iteration ${iterationCount}`;
+      statusEl.textContent = `Iter ${iterationCount} — ${nodeCount} nodes, ${edges.length} edges`;
     } else {
-      statusEl.textContent = `Paused (${iterationCount})`;
+      statusEl.textContent = `Paused (${iterationCount}) — ${nodeCount} nodes, ${edges.length} edges`;
     }
 
     renderer.updateUniforms(camera);
