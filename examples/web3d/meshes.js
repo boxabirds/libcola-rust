@@ -1,5 +1,7 @@
 // Mesh generators for 3D shape reconstruction demo.
-// Each generator returns { positions: number[] (flat xyz), edges: [number,number][], nodeCount: number }
+// Each generator returns:
+//   positions: Float64Array (flat xyz), edges: [number,number][],
+//   faces: [number,number,number][], nodeCount: number
 // Positions are at unit scale (edge length ≈ 1). Caller scales by idealEdgeLength.
 
 const TAU = Math.PI * 2;
@@ -72,7 +74,7 @@ export function icosphere(targetNodes) {
     positions[i * 3 + 2] = vertices[i][2];
   }
 
-  return { positions, edges, nodeCount: vertices.length };
+  return { positions, edges, faces, nodeCount: vertices.length };
 }
 
 // --- Torus mesh ---
@@ -101,17 +103,22 @@ export function torus(targetNodes) {
   }
 
   const edges = [];
+  const faces = [];
   for (let i = 0; i < rings; i++) {
     for (let j = 0; j < segments; j++) {
       const curr = i * segments + j;
-      const nextJ = i * segments + (j + 1) % segments;        // around tube
-      const nextI = ((i + 1) % rings) * segments + j;          // around ring
+      const nextJ = i * segments + (j + 1) % segments;
+      const nextI = ((i + 1) % rings) * segments + j;
+      const diag = ((i + 1) % rings) * segments + (j + 1) % segments;
       edges.push([curr, nextJ]);
       edges.push([curr, nextI]);
+      // Two triangles per quad
+      faces.push([curr, nextI, diag]);
+      faces.push([curr, diag, nextJ]);
     }
   }
 
-  return { positions, edges, nodeCount: n };
+  return { positions, edges, faces, nodeCount: n };
 }
 
 // --- Cube mesh (subdivided faces) ---
@@ -124,6 +131,7 @@ export function cube(targetNodes) {
   const vertices = [];
   const edgeSet = new Set();
   const edges = [];
+  const faces = [];
 
   function addVertex(x, y, z) {
     const PRECISION = 1e6;
@@ -169,6 +177,10 @@ export function cube(targetNodes) {
       for (let j = 0; j <= d; j++) {
         if (i < d) addEdge(grid[i][j], grid[i + 1][j]);
         if (j < d) addEdge(grid[i][j], grid[i][j + 1]);
+        if (i < d && j < d) {
+          faces.push([grid[i][j], grid[i + 1][j], grid[i + 1][j + 1]]);
+          faces.push([grid[i][j], grid[i + 1][j + 1], grid[i][j + 1]]);
+        }
       }
     }
   }
@@ -180,7 +192,7 @@ export function cube(targetNodes) {
     positions[i * 3 + 2] = vertices[i][2];
   }
 
-  return { positions, edges, nodeCount: vertices.length };
+  return { positions, edges, faces, nodeCount: vertices.length };
 }
 
 // --- Flat grid sheet ---
@@ -200,20 +212,26 @@ export function gridSheet(targetNodes) {
   }
 
   const edges = [];
+  const faces = [];
   for (let r = 0; r < side; r++) {
     for (let c = 0; c < side; c++) {
       const idx = r * side + c;
       if (c + 1 < side) edges.push([idx, idx + 1]);
       if (r + 1 < side) edges.push([idx, idx + side]);
+      if (c + 1 < side && r + 1 < side) {
+        faces.push([idx, idx + side, idx + side + 1]);
+        faces.push([idx, idx + side + 1, idx + 1]);
+      }
     }
   }
 
-  return { positions, edges, nodeCount: n };
+  return { positions, edges, faces, nodeCount: n };
 }
 
 // --- Octahedron ---
 
 export function octahedron() {
+  // Vertices: +X, -X, +Y, -Y, +Z, -Z
   const positions = new Float64Array([
      1, 0, 0,   -1, 0, 0,
      0, 1, 0,    0,-1, 0,
@@ -224,7 +242,11 @@ export function octahedron() {
     [1,2],[1,3],[1,4],[1,5],
     [2,4],[2,5],[3,4],[3,5],
   ];
-  return { positions, edges, nodeCount: 6 };
+  const faces = [
+    [0,2,4], [0,4,3], [0,3,5], [0,5,2],
+    [1,4,2], [1,3,4], [1,5,3], [1,2,5],
+  ];
+  return { positions, edges, faces, nodeCount: 6 };
 }
 
 // --- Cylinder / tube ---
@@ -248,18 +270,23 @@ export function cylinder(targetNodes) {
   }
 
   const edges = [];
+  const faces = [];
   for (let i = 0; i < rings; i++) {
     for (let j = 0; j < segments; j++) {
       const curr = i * segments + j;
-      const nextJ = i * segments + (j + 1) % segments;  // around ring
+      const nextJ = i * segments + (j + 1) % segments;
       edges.push([curr, nextJ]);
       if (i + 1 < rings) {
-        edges.push([curr, (i + 1) * segments + j]);      // along length
+        const below = (i + 1) * segments + j;
+        const belowNext = (i + 1) * segments + (j + 1) % segments;
+        edges.push([curr, below]);
+        faces.push([curr, below, belowNext]);
+        faces.push([curr, belowNext, nextJ]);
       }
     }
   }
 
-  return { positions, edges, nodeCount: n };
+  return { positions, edges, faces, nodeCount: n };
 }
 
 // --- Utility: scramble positions into a random ball ---

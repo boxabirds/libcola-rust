@@ -114,3 +114,45 @@ struct EdgeVsOut {
 
     return vec4f(color, 1.0);
 }
+
+// ---- Face pipeline (direct triangles with flat normals) ----
+
+struct FaceVsOut {
+    @builtin(position) pos: vec4f,
+    @location(0) worldNormal: vec3f,
+    @location(1) worldPos: vec3f,
+    @location(2) color: vec3f,
+};
+
+@vertex fn vs_face(
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) color: vec3f,
+) -> FaceVsOut {
+    var out: FaceVsOut;
+    out.pos = u.viewProj * vec4f(position, 1.0);
+    out.worldNormal = normal;
+    out.worldPos = position;
+    out.color = color;
+    return out;
+}
+
+@fragment fn fs_face(in: FaceVsOut) -> @location(0) vec4f {
+    let N = normalize(in.worldNormal);
+    let L = normalize(u.lightDir);
+    let V = normalize(u.eye - in.worldPos);
+    let H = normalize(L + V);
+
+    let diff = max(dot(N, L), 0.0);
+    let spec = pow(max(dot(N, H), 0.0), 48.0);
+
+    let ambient = mix(u.ambientColor * 0.35, u.ambientColor * 0.9, dot(N, vec3f(0.0, 1.0, 0.0)) * 0.5 + 0.5);
+
+    var color = in.color * (ambient + u.lightColor * diff) + u.lightColor * spec * 0.25;
+
+    // Subtle rim lighting for shape definition
+    let rim = 1.0 - max(dot(N, V), 0.0);
+    color += vec3f(0.15, 0.2, 0.3) * pow(rim, 3.0);
+
+    return vec4f(color, 1.0);
+}
