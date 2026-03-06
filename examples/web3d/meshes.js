@@ -252,20 +252,23 @@ export function octahedron() {
 // --- Cylinder / tube ---
 
 export function cylinder(targetNodes) {
-  const rings = Math.max(3, Math.round(Math.sqrt(targetNodes)));
-  const segments = rings;
+  const segments = Math.max(4, Math.round(Math.sqrt(targetNodes)));
+  const rings = segments;
   const n = rings * segments;
   const positions = new Float64Array(n * 3);
-  const HEIGHT = 3.0;
+  // Match axial spacing to ring spacing for uniform edge lengths
+  const RADIUS = 1.0;
+  const ringEdgeLen = TAU * RADIUS / segments;
+  const height = ringEdgeLen * (rings - 1);
 
   for (let i = 0; i < rings; i++) {
-    const y = (i / (rings - 1)) * HEIGHT - HEIGHT / 2;
+    const y = (i / (rings - 1)) * height - height / 2;
     for (let j = 0; j < segments; j++) {
       const angle = (j / segments) * TAU;
       const idx = i * segments + j;
-      positions[idx * 3]     = Math.cos(angle);
+      positions[idx * 3]     = RADIUS * Math.cos(angle);
       positions[idx * 3 + 1] = y;
-      positions[idx * 3 + 2] = Math.sin(angle);
+      positions[idx * 3 + 2] = RADIUS * Math.sin(angle);
     }
   }
 
