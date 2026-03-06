@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>libcola Constraint Gallery</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      padding: 16px 24px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      gap: 16px;
+    }
+    header a { color: #60a5fa; text-decoration: none; font-size: 0.9rem; }
+    header h1 { font-size: 1.2rem; color: #f1f5f9; }
+    .layout {
+      display: flex;
+      height: calc(100vh - 57px);
+    }
+    .sidebar {
+      width: 280px;
+      min-width: 280px;
+      background: #1e293b;
+      border-right: 1px solid #334155;
+      overflow-y: auto;
+      padding: 16px 0;
+    }
+    .sidebar h3 {
+      padding: 0 16px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .demo-item {
+      padding: 10px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.15s;
+      font-size: 0.9rem;
+    }
+    .demo-item:hover { background: #334155; }
+    .demo-item.active {
+      background: rgba(96, 165, 250, 0.1);
+      border-left-color: #60a5fa;
+      color: #60a5fa;
+    }
+    .demo-item .desc {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      flex-wrap: wrap;
+    }
+    .toolbar label {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toolbar input[type="range"] { width: 100px; }
+    .toolbar input[type="number"] { width: 60px; background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 3px 6px; border-radius: 4px; }
+    .toolbar button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .toolbar button:hover { background: #2563eb; }
+    .toolbar .stress {
+      margin-left: auto;
+      font-size: 0.8rem;
+      color: #fbbf24;
+      font-family: monospace;
+    }
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .edge { stroke: #475569; stroke-width: 1.5; }
+    .node { cursor: grab; }
+    .node rect { rx: 4; ry: 4; }
+    .node text { font-size: 11px; fill: #f1f5f9; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .constraint-line { stroke: #a78bfa; stroke-width: 1; stroke-dasharray: 4 2; opacity: 0.5; }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.2rem;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html">&larr; Back</a>
+    <h1>Constraint Gallery</h1>
+  </header>
+
+  <div class="layout">
+    <div class="sidebar">
+      <h3>Demos</h3>
+      <div class="demo-item active" data-demo="force-directed">
+        Force-Directed
+        <div class="desc">Basic stress-majorization layout</div>
+      </div>
+      <div class="demo-item" data-demo="overlap-removal">
+        Overlap Removal
+        <div class="desc">Non-overlap constraints</div>
+      </div>
+      <div class="demo-item" data-demo="separation">
+        Separation
+        <div class="desc">Minimum gap between nodes</div>
+      </div>
+      <div class="demo-item" data-demo="alignment-x">
+        Horizontal Alignment
+        <div class="desc">Nodes aligned on X axis</div>
+      </div>
+      <div class="demo-item" data-demo="alignment-y">
+        Vertical Alignment
+        <div class="desc">Nodes aligned on Y axis</div>
+      </div>
+      <div class="demo-item" data-demo="tree">
+        Tree Layout
+        <div class="desc">Layered tree with separation</div>
+      </div>
+      <div class="demo-item" data-demo="grid">
+        Grid Layout
+        <div class="desc">Alignment + distribution</div>
+      </div>
+      <div class="demo-item" data-demo="edge-lengths">
+        Edge Lengths
+        <div class="desc">Variable ideal edge lengths</div>
+      </div>
+      <div class="demo-item" data-demo="large-graph">
+        Large Graph (50 nodes)
+        <div class="desc">Scale test with random graph</div>
+      </div>
+      <div class="demo-item" data-demo="neighbour-stress">
+        Neighbour Stress
+        <div class="desc">Only neighbour forces</div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="toolbar">
+        <label>
+          Edge Length
+          <input type="number" id="idealLength" value="100" min="20" max="400" step="10">
+        </label>
+        <label>
+          Max Iterations
+          <input type="number" id="maxIter" value="100" min="10" max="1000" step="10">
+        </label>
+        <label>
+          <input type="checkbox" id="avoidOverlaps"> Avoid Overlaps
+        </label>
+        <label>
+          <input type="checkbox" id="rungeKutta" checked> Runge-Kutta
+        </label>
+        <button id="runBtn">Run Layout</button>
+        <span class="stress" id="stressDisplay">stress: -</span>
+      </div>
+
+      <div class="canvas-container">
+        <div id="loading">Loading WASM...</div>
+        <svg id="canvas" viewBox="-400 -300 800 600"></svg>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { ColaLayout, SeparationConstraint, AlignmentConstraint } from '../../pkg/libcola.js';
+
+    // ---- State ----
+    let currentDemo = 'force-directed';
+    let wasmReady = false;
+
+    // ---- SVG helpers ----
+    const svg = document.getElementById('canvas');
+    const ns = 'http://www.w3.org/2000/svg';
+
+    const NODE_COLORS = [
+      '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b',
+      '#10b981', '#06b6d4', '#ef4444', '#84cc16',
+    ];
+
+    function clearCanvas() {
+      svg.innerHTML = '';
+    }
+
+    function drawGraph(result, edges, labels) {
+      clearCanvas();
+      const n = result.nodeCount;
+
+      // Draw edges.
+      for (const [s, t] of edges) {
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', result.getX(s));
+        line.setAttribute('y1', result.getY(s));
+        line.setAttribute('x2', result.getX(t));
+        line.setAttribute('y2', result.getY(t));
+        line.classList.add('edge');
+        svg.appendChild(line);
+      }
+
+      // Draw nodes.
+      for (let i = 0; i < n; i++) {
+        const g = document.createElementNS(ns, 'g');
+        g.classList.add('node');
+
+        const x = result.getX(i);
+        const y = result.getY(i);
+        const w = result.getWidth(i);
+        const h = result.getHeight(i);
+
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', x - w / 2);
+        rect.setAttribute('y', y - h / 2);
+        rect.setAttribute('width', w);
+        rect.setAttribute('height', h);
+        rect.setAttribute('fill', NODE_COLORS[i % NODE_COLORS.length]);
+        rect.setAttribute('fill-opacity', '0.85');
+        rect.setAttribute('stroke', 'rgba(255,255,255,0.2)');
+        rect.setAttribute('stroke-width', '1');
+        g.appendChild(rect);
+
+        const text = document.createElementNS(ns, 'text');
+        text.setAttribute('x', x);
+        text.setAttribute('y', y);
+        text.textContent = labels ? labels[i] : String(i);
+        g.appendChild(text);
+
+        svg.appendChild(g);
+      }
+
+      // Fit viewBox.
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i < n; i++) {
+        const x = result.getX(i), y = result.getY(i);
+        const w = result.getWidth(i), h = result.getHeight(i);
+        minX = Math.min(minX, x - w / 2);
+        minY = Math.min(minY, y - h / 2);
+        maxX = Math.max(maxX, x + w / 2);
+        maxY = Math.max(maxY, y + h / 2);
+      }
+      const pad = 60;
+      svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${maxX - minX + 2 * pad} ${maxY - minY + 2 * pad}`);
+
+      document.getElementById('stressDisplay').textContent = `stress: ${result.stress.toFixed(4)}`;
+    }
+
+    // ---- Demo definitions ----
+    const demos = {
+      'force-directed': () => {
+        const layout = new ColaLayout();
+        // Diamond graph: 0-1-2-3-0, 0-2, 1-3
+        const N = 6;
+        for (let i = 0; i < N; i++) {
+          layout.addNode(Math.random() * 100, Math.random() * 100, 40, 30);
+        }
+        const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,0],[0,3],[1,4],[2,5]];
+        for (const [s,t] of edges) layout.addEdge(s, t);
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+
+      'overlap-removal': () => {
+        const layout = new ColaLayout();
+        // Cluster of nodes on top of each other.
+        for (let i = 0; i < 8; i++) {
+          layout.addNode(i * 5, i * 3, 50, 35);
+        }
+        const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[0,4],[2,6]];
+        for (const [s,t] of edges) layout.addEdge(s, t);
+        layout.setAvoidOverlaps(true);
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+
+      'separation': () => {
+        const layout = new ColaLayout();
+        for (let i = 0; i < 5; i++) {
+          layout.addNode(i * 20, 0, 40, 30);
+        }
+        const edges = [[0,1],[1,2],[2,3],[3,4],[0,2],[1,3],[2,4]];
+        for (const [s,t] of edges) layout.addEdge(s, t);
+
+        // Enforce: node[0].x + 80 <= node[1].x, etc.
+        const gap = 80;
+        for (let i = 0; i < 4; i++) {
+          layout.addSeparationConstraint(new SeparationConstraint(0, i, i + 1, gap, false));
+        }
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+
+      'alignment-x': () => {
+        const layout = new ColaLayout();
+        for (let i = 0; i < 6; i++) {
+          layout.addNode(Math.random() * 200, Math.random() * 200, 40, 30);
+        }
+        const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[0,5]];
+        for (const [s,t] of edges) layout.addEdge(s, t);
+
+        // Align nodes 0, 2, 4 horizontally (same Y).
+        const align = new AlignmentConstraint(1, 0, false);
+        align.addNode(0);
+        align.addNode(2);
+        align.addNode(4);
+        layout.addAlignmentConstraint(align);
+
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+
+      'alignment-y': () => {
+        const layout = new ColaLayout();
+        for (let i = 0; i < 6; i++) {
+          layout.addNode(Math.random() * 200, Math.random() * 200, 40, 30);
+        }
+        const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[0,3]];
+        for (const [s,t] of edges) layout.addEdge(s, t);
+
+        // Align nodes 1, 3, 5 vertically (same X).
+        const align = new AlignmentConstraint(0, 100, false);
+        align.addNode(1);
+        align.addNode(3);
+        align.addNode(5);
+        layout.addAlignmentConstraint(align);
+
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+
+      'tree': () => {
+        const layout = new ColaLayout();
+        // Binary tree: root=0, children 1,2, grandchildren 3,4,5,6
+        const nodes = 7;
+        for (let i = 0; i < nodes; i++) {
+          layout.addNode(Math.random() * 100, i * 30, 50, 30);
+        }
+        const edges = [[0,1],[0,2],[1,3],[1,4],[2,5],[2,6]];
+        for (const [s,t] of edges) layout.addEdge(s, t);
+
+        // Layer separation: each level is 80px below the previous.
+        const layerGap = 80;
+        // Root above children.
+        layout.addSeparationConstraint(new SeparationConstraint(1, 0, 1, layerGap, false));
+        layout.addSeparationConstraint(new SeparationConstraint(1, 0, 2, layerGap, false));
+        // Children above grandchildren.
+        for (let gc = 3; gc <= 4; gc++) {
+          layout.addSeparationConstraint(new SeparationConstraint(1, 1, gc, layerGap, false));
+        }
+        for (let gc = 5; gc <= 6; gc++) {
+          layout.addSeparationConstraint(new SeparationConstraint(1, 2, gc, layerGap, false));
+        }
+
+        layout.setAvoidOverlaps(true);
+        applySettings(layout);
+        const labels = ['root', 'A', 'B', 'A1', 'A2', 'B1', 'B2'];
+        return { result: layout.run(), edges, labels };
+      },
+
+      'grid': () => {
+        const layout = new ColaLayout();
+        // 3x3 grid.
+        const cols = 3, rows = 3;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            layout.addNode(c * 30 + Math.random() * 20, r * 30 + Math.random() * 20, 40, 30);
+          }
+        }
+        const edges = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const i = r * cols + c;
+            if (c + 1 < cols) { edges.push([i, i + 1]); layout.addEdge(i, i + 1); }
+            if (r + 1 < rows) { edges.push([i, i + cols]); layout.addEdge(i, i + cols); }
+          }
+        }
+
+        // Align rows (same Y) and columns (same X).
+        const rowGap = 80;
+        const colGap = 80;
+        for (let r = 0; r < rows - 1; r++) {
+          for (let c = 0; c < cols; c++) {
+            layout.addSeparationConstraint(
+              new SeparationConstraint(1, r * cols + c, (r + 1) * cols + c, rowGap, false)
+            );
+          }
+        }
+        for (let c = 0; c < cols - 1; c++) {
+          for (let r = 0; r < rows; r++) {
+            layout.addSeparationConstraint(
+              new SeparationConstraint(0, r * cols + c, r * cols + c + 1, colGap, false)
+            );
+          }
+        }
+
+        layout.setAvoidOverlaps(true);
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+
+      'edge-lengths': () => {
+        const layout = new ColaLayout();
+        // Star graph with varying edge lengths.
+        const N = 7;
+        for (let i = 0; i < N; i++) {
+          layout.addNode(Math.random() * 100, Math.random() * 100, 35, 25);
+        }
+        // Center node is 0, spokes to 1..6 with varying lengths.
+        const edges = [];
+        const lengths = [0.5, 1.0, 1.5, 2.0, 0.8, 1.2];
+        for (let i = 1; i < N; i++) {
+          edges.push([0, i]);
+          layout.addEdgeWithLength(0, i, lengths[i - 1] * 100);
+        }
+        applySettings(layout);
+        const labels = ['center', ...lengths.map(l => `${l}x`)];
+        return { result: layout.run(), edges, labels };
+      },
+
+      'large-graph': () => {
+        const layout = new ColaLayout();
+        const N = 50;
+        for (let i = 0; i < N; i++) {
+          layout.addNode(Math.random() * 400 - 200, Math.random() * 400 - 200, 20, 20);
+        }
+        // Random sparse graph: each node connects to 2-3 others.
+        const edges = [];
+        for (let i = 0; i < N; i++) {
+          const numEdges = 2 + Math.floor(Math.random() * 2);
+          for (let j = 0; j < numEdges; j++) {
+            const target = Math.floor(Math.random() * N);
+            if (target !== i) {
+              edges.push([i, target]);
+              layout.addEdge(i, target);
+            }
+          }
+        }
+        layout.setAvoidOverlaps(true);
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+
+      'neighbour-stress': () => {
+        const layout = new ColaLayout();
+        // Path graph to show difference with neighbour stress.
+        const N = 8;
+        for (let i = 0; i < N; i++) {
+          layout.addNode(i * 10, Math.random() * 50, 30, 25);
+        }
+        const edges = [];
+        for (let i = 0; i < N - 1; i++) {
+          edges.push([i, i + 1]);
+          layout.addEdge(i, i + 1);
+        }
+        layout.setNeighbourStress(true);
+        applySettings(layout);
+        return { result: layout.run(), edges };
+      },
+    };
+
+    function applySettings(layout) {
+      layout.setIdealEdgeLength(parseInt(document.getElementById('idealLength').value));
+      layout.setMaxIterations(parseInt(document.getElementById('maxIter').value));
+      layout.setRungeKutta(document.getElementById('rungeKutta').checked);
+      if (document.getElementById('avoidOverlaps').checked) {
+        layout.setAvoidOverlaps(true);
+      }
+    }
+
+    function runDemo(name) {
+      if (!wasmReady) return;
+      currentDemo = name;
+
+      // Update sidebar.
+      document.querySelectorAll('.demo-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.demo === name);
+      });
+
+      const { result, edges, labels } = demos[name]();
+      drawGraph(result, edges, labels);
+    }
+
+    // ---- Event listeners ----
+    document.querySelectorAll('.demo-item').forEach(el => {
+      el.addEventListener('click', () => runDemo(el.dataset.demo));
+    });
+
+    document.getElementById('runBtn').addEventListener('click', () => runDemo(currentDemo));
+    document.getElementById('idealLength').addEventListener('change', () => runDemo(currentDemo));
+    document.getElementById('maxIter').addEventListener('change', () => runDemo(currentDemo));
+    document.getElementById('avoidOverlaps').addEventListener('change', () => runDemo(currentDemo));
+    document.getElementById('rungeKutta').addEventListener('change', () => runDemo(currentDemo));
+
+    // ---- Init ----
+    async function start() {
+      await init();
+      wasmReady = true;
+      document.getElementById('loading').remove();
+      runDemo('force-directed');
+    }
+
+    start().catch(err => {
+      document.getElementById('loading').textContent = 'Error loading WASM: ' + err.message;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>

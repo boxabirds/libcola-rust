@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stress Animation - libcola WASM</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      padding: 12px 24px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      gap: 16px;
+    }
+    header a { color: #60a5fa; text-decoration: none; font-size: 0.9rem; }
+    header h1 { font-size: 1.1rem; color: #f1f5f9; flex: 1; }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 24px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+    }
+    .controls label { display: flex; align-items: center; gap: 6px; color: #94a3b8; }
+    .controls select, .controls input[type="number"] {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .controls button {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .btn-play { background: #10b981; color: white; }
+    .btn-play:hover { background: #059669; }
+    .btn-step { background: #3b82f6; color: white; }
+    .btn-step:hover { background: #2563eb; }
+    .btn-reset { background: #ef4444; color: white; }
+    .btn-reset:hover { background: #dc2626; }
+    .content {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .graph-panel {
+      flex: 1;
+      position: relative;
+    }
+    svg#graph {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+    }
+    svg .edge { stroke: #475569; stroke-width: 2; }
+    svg .node-rect {
+      fill-opacity: 0.85;
+      stroke: rgba(255,255,255,0.2);
+      stroke-width: 1;
+    }
+    svg .node-text {
+      fill: white;
+      font-size: 11px;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+    }
+    .stats-panel {
+      width: 320px;
+      min-width: 320px;
+      background: #1e293b;
+      border-left: 1px solid #334155;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .stat-card {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #334155;
+    }
+    .stat-card h3 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+    .big-number {
+      font-size: 2rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .stress-value { color: #fbbf24; }
+    .iter-value { color: #60a5fa; }
+    .reduction-value { color: #4ade80; }
+    .stress-bar {
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .stress-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #4ade80, #fbbf24, #ef4444);
+      transition: width 0.2s;
+    }
+    .chart-container {
+      height: 160px;
+      position: relative;
+    }
+    canvas#stressChart {
+      width: 100%;
+      height: 100%;
+    }
+    .speed-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #94a3b8;
+      font-size: 0.8rem;
+    }
+    .speed-control input[type="range"] {
+      flex: 1;
+      accent-color: #60a5fa;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-size: 1.1rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html">← Back</a>
+    <h1>Stress Majorization Animation</h1>
+  </header>
+
+  <div class="controls">
+    <label>
+      Graph
+      <select id="graphSelect">
+        <option value="random20">Random (20 nodes)</option>
+        <option value="random50">Random (50 nodes)</option>
+        <option value="grid">Grid 4x4</option>
+        <option value="tree">Binary Tree</option>
+        <option value="cycle">Cycle (12 nodes)</option>
+        <option value="dense">Dense (15 nodes)</option>
+      </select>
+    </label>
+    <label>
+      Edge Length
+      <input type="number" id="idealLength" value="80" min="20" max="300" step="10">
+    </label>
+    <button class="btn-play" id="playBtn">Play</button>
+    <button class="btn-step" id="stepBtn">Step</button>
+    <button class="btn-reset" id="resetBtn">Reset</button>
+    <div class="speed-control">
+      Delay (ms)
+      <input type="range" id="speed" min="0" max="500" value="0">
+      <span id="delayLabel">0ms</span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="graph-panel">
+      <div id="loading">Loading WASM...</div>
+      <svg id="graph" viewBox="-400 -300 800 600"></svg>
+    </div>
+    <div class="stats-panel">
+      <div class="stat-card">
+        <h3>Current Stress</h3>
+        <div class="big-number stress-value" id="stressValue">-</div>
+        <div class="stress-bar">
+          <div class="stress-bar-fill" id="stressBarFill" style="width: 100%"></div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Iteration</h3>
+        <div class="big-number iter-value" id="iterValue">0</div>
+      </div>
+      <div class="stat-card">
+        <h3>Stress Reduction</h3>
+        <div class="big-number reduction-value" id="reductionValue">-</div>
+      </div>
+      <div class="stat-card">
+        <h3>Stress Over Time</h3>
+        <div class="chart-container">
+          <canvas id="stressChart"></canvas>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Graph Info</h3>
+        <div id="graphInfo" style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { ColaLayout } from '../../pkg/libcola.js';
+
+    const NODE_COLORS = [
+      '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b',
+      '#10b981', '#06b6d4', '#ef4444', '#84cc16',
+    ];
+    const NODE_SIZE = 20;
+
+    const svgEl = document.getElementById('graph');
+    const ns = 'http://www.w3.org/2000/svg';
+    const chartCanvas = document.getElementById('stressChart');
+    const ctx = chartCanvas.getContext('2d');
+
+    let wasmReady = false;
+    let playing = false;
+    let animationId = null;
+
+    // Graph state
+    let graphNodes = [];   // { x, y }  (initial positions)
+    let graphEdges = [];   // [s, t]
+    let currentPositions = [];  // { x, y, w, h } (current animated positions)
+    let iteration = 0;
+    let stressHistory = [];
+    let initialStress = 0;
+
+    // ---- Graph generators ----
+    const generators = {
+      random20: () => randomGraph(20, 2),
+      random50: () => randomGraph(50, 2),
+      grid: () => gridGraph(4, 4),
+      tree: () => binaryTree(4),
+      cycle: () => cycleGraph(12),
+      dense: () => denseGraph(15),
+    };
+
+    function randomGraph(n, edgesPerNode) {
+      const nodes = [];
+      const edges = [];
+      const SPREAD = 300;
+      for (let i = 0; i < n; i++) {
+        nodes.push({ x: (Math.random() - 0.5) * SPREAD, y: (Math.random() - 0.5) * SPREAD });
+      }
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < edgesPerNode; j++) {
+          const t = Math.floor(Math.random() * n);
+          if (t !== i && !edges.some(e => (e[0] === i && e[1] === t) || (e[0] === t && e[1] === i))) {
+            edges.push([i, t]);
+          }
+        }
+      }
+      // Ensure connected
+      for (let i = 1; i < n; i++) {
+        if (!edges.some(e => e[0] === i || e[1] === i)) {
+          edges.push([i, Math.floor(Math.random() * i)]);
+        }
+      }
+      return { nodes, edges };
+    }
+
+    function gridGraph(rows, cols) {
+      const nodes = [];
+      const edges = [];
+      const SPREAD = 300;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          nodes.push({
+            x: (Math.random() - 0.5) * SPREAD,
+            y: (Math.random() - 0.5) * SPREAD,
+          });
+          const idx = r * cols + c;
+          if (c + 1 < cols) edges.push([idx, idx + 1]);
+          if (r + 1 < rows) edges.push([idx, idx + cols]);
+        }
+      }
+      return { nodes, edges };
+    }
+
+    function binaryTree(depth) {
+      const nodes = [];
+      const edges = [];
+      const n = (1 << depth) - 1;
+      const SPREAD = 300;
+      for (let i = 0; i < n; i++) {
+        nodes.push({ x: (Math.random() - 0.5) * SPREAD, y: (Math.random() - 0.5) * SPREAD });
+      }
+      for (let i = 0; i < n; i++) {
+        const left = 2 * i + 1;
+        const right = 2 * i + 2;
+        if (left < n) edges.push([i, left]);
+        if (right < n) edges.push([i, right]);
+      }
+      return { nodes, edges };
+    }
+
+    function cycleGraph(n) {
+      const nodes = [];
+      const edges = [];
+      // Initialize in a circle — stress majorization has local minima for
+      // cycles from random positions, so circular init avoids tangled results.
+      const radius = 150;
+      for (let i = 0; i < n; i++) {
+        const angle = (2 * Math.PI * i) / n;
+        nodes.push({ x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
+      }
+      for (let i = 0; i < n; i++) {
+        edges.push([i, (i + 1) % n]);
+      }
+      return { nodes, edges };
+    }
+
+    function denseGraph(n) {
+      const nodes = [];
+      const edges = [];
+      const SPREAD = 200;
+      for (let i = 0; i < n; i++) {
+        nodes.push({ x: (Math.random() - 0.5) * SPREAD, y: (Math.random() - 0.5) * SPREAD });
+      }
+      // Connect every node to ~40% of others
+      const CONNECTION_PROBABILITY = 0.4;
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          if (Math.random() < CONNECTION_PROBABILITY) {
+            edges.push([i, j]);
+          }
+        }
+      }
+      return { nodes, edges };
+    }
+
+    // ---- Layout stepping ----
+    // We simulate stepping by running layout with increasing maxIterations
+    // and comparing to previous state.
+
+    function computeLayout(maxIter) {
+      const layout = new ColaLayout();
+      for (const n of graphNodes) {
+        layout.addNode(n.x, n.y, NODE_SIZE, NODE_SIZE);
+      }
+      for (const [s, t] of graphEdges) {
+        layout.addEdge(s, t);
+      }
+      layout.setIdealEdgeLength(parseInt(document.getElementById('idealLength').value));
+      layout.setMaxIterations(maxIter);
+      layout.setRungeKutta(true);
+      layout.setAvoidOverlaps(true);
+
+      const result = layout.run();
+      const positions = [];
+      for (let i = 0; i < graphNodes.length; i++) {
+        positions.push({
+          x: result.getX(i),
+          y: result.getY(i),
+          w: result.getWidth(i),
+          h: result.getHeight(i),
+        });
+      }
+      return { positions, stress: result.stress };
+    }
+
+    function step() {
+      iteration++;
+      const { positions, stress } = computeLayout(iteration);
+      currentPositions = positions;
+
+      stressHistory.push(stress);
+      if (iteration === 1) initialStress = stress;
+
+      updateDisplay();
+    }
+
+    function reset() {
+      stop();
+      const graphType = document.getElementById('graphSelect').value;
+      const { nodes, edges } = generators[graphType]();
+      graphNodes = nodes;
+      graphEdges = edges;
+      iteration = 0;
+      stressHistory = [];
+      initialStress = 0;
+
+      // Show initial (random) positions
+      currentPositions = nodes.map(n => ({ x: n.x, y: n.y, w: NODE_SIZE, h: NODE_SIZE }));
+
+      // Compute initial stress
+      const { stress } = computeLayout(0);
+      initialStress = stress;
+      stressHistory.push(stress);
+
+      updateDisplay();
+      document.getElementById('graphInfo').innerHTML =
+        `Nodes: ${nodes.length}<br>Edges: ${edges.length}<br>Type: ${graphType}`;
+    }
+
+    function play() {
+      if (playing) { stop(); return; }
+      playing = true;
+      document.getElementById('playBtn').textContent = 'Pause';
+      const MAX_ITERATIONS = 200;
+
+      function tick() {
+        if (!playing || iteration >= MAX_ITERATIONS) { stop(); return; }
+        step();
+        const delay = parseInt(document.getElementById('speed').value);
+        document.getElementById('delayLabel').textContent = delay + 'ms';
+        if (delay === 0) {
+          animationId = requestAnimationFrame(tick);
+        } else {
+          animationId = setTimeout(tick, delay);
+        }
+      }
+      tick();
+    }
+
+    function stop() {
+      playing = false;
+      document.getElementById('playBtn').textContent = 'Play';
+      if (animationId) {
+        clearTimeout(animationId);
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+    }
+
+    // ---- Rendering ----
+    function updateDisplay() {
+      drawGraph();
+      drawChart();
+      updateStats();
+    }
+
+    function drawGraph() {
+      svgEl.innerHTML = '';
+      const n = currentPositions.length;
+
+      // Draw edges
+      for (const [s, t] of graphEdges) {
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', currentPositions[s].x);
+        line.setAttribute('y1', currentPositions[s].y);
+        line.setAttribute('x2', currentPositions[t].x);
+        line.setAttribute('y2', currentPositions[t].y);
+        line.classList.add('edge');
+        svgEl.appendChild(line);
+      }
+
+      // Draw nodes
+      for (let i = 0; i < n; i++) {
+        const p = currentPositions[i];
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', p.x - p.w / 2);
+        rect.setAttribute('y', p.y - p.h / 2);
+        rect.setAttribute('width', p.w);
+        rect.setAttribute('height', p.h);
+        rect.setAttribute('rx', 4);
+        rect.setAttribute('fill', NODE_COLORS[i % NODE_COLORS.length]);
+        rect.classList.add('node-rect');
+        svgEl.appendChild(rect);
+
+        if (n <= 30) {
+          const text = document.createElementNS(ns, 'text');
+          text.setAttribute('x', p.x);
+          text.setAttribute('y', p.y);
+          text.textContent = String(i);
+          text.classList.add('node-text');
+          svgEl.appendChild(text);
+        }
+      }
+
+      // Fit viewBox
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of currentPositions) {
+        minX = Math.min(minX, p.x - p.w / 2);
+        minY = Math.min(minY, p.y - p.h / 2);
+        maxX = Math.max(maxX, p.x + p.w / 2);
+        maxY = Math.max(maxY, p.y + p.h / 2);
+      }
+      const pad = 40;
+      svgEl.setAttribute('viewBox',
+        `${minX - pad} ${minY - pad} ${maxX - minX + 2 * pad} ${maxY - minY + 2 * pad}`);
+    }
+
+    function updateStats() {
+      const stress = stressHistory.length > 0 ? stressHistory[stressHistory.length - 1] : 0;
+      document.getElementById('stressValue').textContent = stress.toFixed(2);
+      document.getElementById('iterValue').textContent = String(iteration);
+
+      if (initialStress > 0 && stressHistory.length > 1) {
+        const reduction = ((initialStress - stress) / initialStress * 100);
+        document.getElementById('reductionValue').textContent = reduction.toFixed(1) + '%';
+      } else {
+        document.getElementById('reductionValue').textContent = '-';
+      }
+
+      // Stress bar (relative to initial)
+      const barPct = initialStress > 0 ? Math.min(100, (stress / initialStress) * 100) : 100;
+      document.getElementById('stressBarFill').style.width = barPct + '%';
+    }
+
+    function drawChart() {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = chartCanvas.getBoundingClientRect();
+      chartCanvas.width = rect.width * dpr;
+      chartCanvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const w = rect.width;
+      const h = rect.height;
+      const PAD_LEFT = 45;
+      const PAD_BOTTOM = 20;
+      const PAD_TOP = 5;
+      const PAD_RIGHT = 5;
+      const plotW = w - PAD_LEFT - PAD_RIGHT;
+      const plotH = h - PAD_TOP - PAD_BOTTOM;
+
+      ctx.clearRect(0, 0, w, h);
+
+      if (stressHistory.length < 2) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('Run iterations to see stress curve', w / 2, h / 2);
+        return;
+      }
+
+      const maxStress = Math.max(...stressHistory);
+      const minStress = Math.min(...stressHistory);
+      const range = maxStress - minStress || 1;
+
+      // Grid lines
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 0.5;
+      const GRID_LINES = 4;
+      for (let i = 0; i <= GRID_LINES; i++) {
+        const y = PAD_TOP + (plotH / GRID_LINES) * i;
+        ctx.beginPath();
+        ctx.moveTo(PAD_LEFT, y);
+        ctx.lineTo(PAD_LEFT + plotW, y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px system-ui';
+        ctx.textAlign = 'right';
+        const val = maxStress - (range / GRID_LINES) * i;
+        ctx.fillText(val.toFixed(0), PAD_LEFT - 4, y + 3);
+      }
+
+      // Stress curve
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < stressHistory.length; i++) {
+        const x = PAD_LEFT + (i / (stressHistory.length - 1)) * plotW;
+        const y = PAD_TOP + (1 - (stressHistory[i] - minStress) / range) * plotH;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Fill under curve
+      const lastX = PAD_LEFT + plotW;
+      const lastY = PAD_TOP + (1 - (stressHistory[stressHistory.length - 1] - minStress) / range) * plotH;
+      ctx.lineTo(lastX, PAD_TOP + plotH);
+      ctx.lineTo(PAD_LEFT, PAD_TOP + plotH);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.1)';
+      ctx.fill();
+
+      // Current point
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fill();
+
+      // X-axis label
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(`iteration ${stressHistory.length - 1}`, PAD_LEFT + plotW / 2, h - 2);
+    }
+
+    // ---- Events ----
+    document.getElementById('playBtn').addEventListener('click', play);
+    document.getElementById('stepBtn').addEventListener('click', () => { stop(); step(); });
+    document.getElementById('resetBtn').addEventListener('click', reset);
+    document.getElementById('graphSelect').addEventListener('change', reset);
+    document.getElementById('idealLength').addEventListener('change', reset);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === ' ') { e.preventDefault(); play(); }
+      if (e.key === 'ArrowRight') { stop(); step(); }
+      if (e.key === 'r' || e.key === 'R') reset();
+    });
+
+    // ---- Init ----
+    async function start() {
+      await init();
+      wasmReady = true;
+      document.getElementById('loading').remove();
+      reset();
+    }
+
+    start().catch(err => {
+      document.getElementById('loading').textContent = 'Error: ' + err.message;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>

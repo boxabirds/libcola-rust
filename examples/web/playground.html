@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Playground - libcola WASM</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      padding: 12px 24px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      gap: 16px;
+    }
+    header a { color: #60a5fa; text-decoration: none; font-size: 0.9rem; }
+    header h1 { font-size: 1.1rem; color: #f1f5f9; flex: 1; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 24px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+    }
+    .toolbar label { display: flex; align-items: center; gap: 6px; color: #94a3b8; }
+    .toolbar input[type="number"] {
+      width: 60px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      padding: 4px 6px;
+      border-radius: 4px;
+    }
+    .toolbar input[type="checkbox"] { accent-color: #60a5fa; }
+    .toolbar button {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .btn-secondary:hover { background: #475569; }
+    .mode-indicator {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .mode-add { background: #1a3a2a; color: #4ade80; }
+    .mode-connect { background: #1e3a5f; color: #60a5fa; }
+    .mode-drag { background: #3b1f5e; color: #a78bfa; }
+    .stats {
+      margin-left: auto;
+      color: #64748b;
+      font-size: 0.8rem;
+    }
+    .canvas-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-size: 1.1rem;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+    }
+    svg .edge { stroke: #475569; stroke-width: 2; }
+    svg .edge-preview { stroke: #4ade80; stroke-width: 2; stroke-dasharray: 6; opacity: 0.7; }
+    svg .node-circle {
+      cursor: pointer;
+      stroke: rgba(255,255,255,0.3);
+      stroke-width: 2;
+      transition: stroke 0.15s;
+    }
+    svg .node-circle:hover { stroke: #fff; }
+    svg .node-label {
+      fill: white;
+      font-size: 13px;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+      font-weight: 600;
+    }
+    .help-bar {
+      padding: 8px 24px;
+      background: #1e293b;
+      border-top: 1px solid #334155;
+      font-size: 0.78rem;
+      color: #64748b;
+      display: flex;
+      gap: 24px;
+    }
+    .help-bar kbd {
+      background: #334155;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html">← Back</a>
+    <h1>Interactive Playground</h1>
+  </header>
+
+  <div class="toolbar">
+    <span class="mode-indicator mode-add" id="modeLabel">ADD</span>
+    <button class="btn-secondary" id="modeBtn">Mode: Add Nodes</button>
+    <label>
+      Edge Length
+      <input type="number" id="idealLength" value="120" min="20" max="400" step="10">
+    </label>
+    <label>
+      <input type="checkbox" id="avoidOverlaps" checked> Overlaps
+    </label>
+    <label>
+      <input type="checkbox" id="rungeKutta" checked> RK4
+    </label>
+    <button class="btn-primary" id="layoutBtn">Run Layout</button>
+    <button class="btn-danger" id="clearBtn">Clear</button>
+    <span class="stats" id="stats">0 nodes, 0 edges</span>
+  </div>
+
+  <div class="canvas-area">
+    <div id="loading">Loading WASM...</div>
+    <svg id="canvas" viewBox="0 0 1200 800"></svg>
+  </div>
+
+  <div class="help-bar">
+    <span><kbd>Click</kbd> canvas to add node</span>
+    <span><kbd>Click</kbd> node then another to connect</span>
+    <span><kbd>M</kbd> cycle mode: add / connect / drag</span>
+    <span><kbd>Space</kbd> run layout</span>
+    <span><kbd>Delete</kbd> clear all</span>
+  </div>
+
+  <script type="module">
+    import init, { ColaLayout } from '../../pkg/libcola.js';
+
+    const NODE_RADIUS = 20;
+    const NODE_COLORS = [
+      '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b',
+      '#10b981', '#06b6d4', '#ef4444', '#84cc16',
+    ];
+
+    const svg = document.getElementById('canvas');
+    const ns = 'http://www.w3.org/2000/svg';
+    const modeBtn = document.getElementById('modeBtn');
+    const modeLabel = document.getElementById('modeLabel');
+    const statsEl = document.getElementById('stats');
+
+    // State
+    const MODES = ['add', 'connect', 'drag'];
+    const MODE_LABELS = { add: 'ADD', connect: 'CONNECT', drag: 'DRAG' };
+    const MODE_CLASSES = { add: 'mode-add', connect: 'mode-connect', drag: 'mode-drag' };
+    let mode = 'add';
+    let nodes = [];       // { x, y, el, labelEl }
+    let edges = [];       // { s, t, el }
+    let connectSource = null;
+    let previewLine = null;
+    let dragNode = null;
+    let dragOffset = { x: 0, y: 0 };
+    let wasmReady = false;
+
+    function setMode(m) {
+      mode = m;
+      modeBtn.textContent = `Mode: ${m === 'add' ? 'Add Nodes' : m === 'connect' ? 'Connect' : 'Drag'}`;
+      modeLabel.textContent = MODE_LABELS[m];
+      modeLabel.className = 'mode-indicator ' + MODE_CLASSES[m];
+      connectSource = null;
+      removePreview();
+      deselectAll();
+    }
+
+    function updateStats() {
+      statsEl.textContent = `${nodes.length} nodes, ${edges.length} edges`;
+    }
+
+    function deselectAll() {
+      nodes.forEach(n => n.el.setAttribute('stroke', 'rgba(255,255,255,0.3)'));
+    }
+
+    function removePreview() {
+      if (previewLine) { previewLine.remove(); previewLine = null; }
+    }
+
+    function addNode(x, y) {
+      const idx = nodes.length;
+      const circle = document.createElementNS(ns, 'circle');
+      circle.setAttribute('cx', x);
+      circle.setAttribute('cy', y);
+      circle.setAttribute('r', NODE_RADIUS);
+      circle.setAttribute('fill', NODE_COLORS[idx % NODE_COLORS.length]);
+      circle.classList.add('node-circle');
+
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', x);
+      label.setAttribute('y', y);
+      label.textContent = String(idx);
+      label.classList.add('node-label');
+
+      svg.appendChild(circle);
+      svg.appendChild(label);
+
+      const node = { x, y, el: circle, labelEl: label };
+      nodes.push(node);
+
+      circle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        if (mode === 'connect') {
+          handleConnectClick(idx);
+        } else if (mode === 'drag') {
+          startDrag(idx, e);
+        } else if (mode === 'add') {
+          // In add mode, clicking a node switches to connect from it
+          setMode('connect');
+          handleConnectClick(idx);
+        }
+      });
+
+      updateStats();
+      return node;
+    }
+
+    function addEdge(s, t) {
+      // Deduplicate
+      if (edges.some(e => (e.s === s && e.t === t) || (e.s === t && e.t === s))) return;
+      if (s === t) return;
+
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', nodes[s].x);
+      line.setAttribute('y1', nodes[s].y);
+      line.setAttribute('x2', nodes[t].x);
+      line.setAttribute('y2', nodes[t].y);
+      line.classList.add('edge');
+      svg.insertBefore(line, svg.firstChild);
+
+      edges.push({ s, t, el: line });
+      updateStats();
+    }
+
+    function handleConnectClick(idx) {
+      if (connectSource === null) {
+        connectSource = idx;
+        nodes[idx].el.setAttribute('stroke', '#4ade80');
+        nodes[idx].el.setAttribute('stroke-width', '3');
+      } else {
+        addEdge(connectSource, idx);
+        deselectAll();
+        connectSource = null;
+        removePreview();
+      }
+    }
+
+    function startDrag(idx, e) {
+      dragNode = idx;
+      const pt = svgPoint(e);
+      dragOffset.x = nodes[idx].x - pt.x;
+      dragOffset.y = nodes[idx].y - pt.y;
+    }
+
+    function svgPoint(e) {
+      const rect = svg.getBoundingClientRect();
+      const vb = svg.viewBox.baseVal;
+      return {
+        x: vb.x + (e.clientX - rect.left) / rect.width * vb.width,
+        y: vb.y + (e.clientY - rect.top) / rect.height * vb.height,
+      };
+    }
+
+    function moveNode(idx, x, y) {
+      nodes[idx].x = x;
+      nodes[idx].y = y;
+      nodes[idx].el.setAttribute('cx', x);
+      nodes[idx].el.setAttribute('cy', y);
+      nodes[idx].labelEl.setAttribute('x', x);
+      nodes[idx].labelEl.setAttribute('y', y);
+      // Update connected edges
+      for (const edge of edges) {
+        if (edge.s === idx) {
+          edge.el.setAttribute('x1', x);
+          edge.el.setAttribute('y1', y);
+        }
+        if (edge.t === idx) {
+          edge.el.setAttribute('x2', x);
+          edge.el.setAttribute('y2', y);
+        }
+      }
+    }
+
+    function clearAll() {
+      svg.innerHTML = '';
+      nodes = [];
+      edges = [];
+      connectSource = null;
+      removePreview();
+      updateStats();
+    }
+
+    function runLayout() {
+      if (!wasmReady || nodes.length < 2) return;
+
+      const layout = new ColaLayout();
+      const nodeDiameter = NODE_RADIUS * 2;
+      for (const n of nodes) {
+        layout.addNode(n.x, n.y, nodeDiameter, nodeDiameter);
+      }
+      for (const e of edges) {
+        layout.addEdge(e.s, e.t);
+      }
+
+      layout.setIdealEdgeLength(parseInt(document.getElementById('idealLength').value));
+      layout.setMaxIterations(200);
+      layout.setRungeKutta(document.getElementById('rungeKutta').checked);
+      if (document.getElementById('avoidOverlaps').checked) {
+        layout.setAvoidOverlaps(true);
+      }
+
+      const result = layout.run();
+
+      // Animate from current positions to layout positions
+      const startPositions = nodes.map(n => ({ x: n.x, y: n.y }));
+      const endPositions = [];
+      for (let i = 0; i < nodes.length; i++) {
+        endPositions.push({ x: result.getX(i), y: result.getY(i) });
+      }
+
+      const ANIMATION_DURATION_MS = 500;
+      const FRAME_INTERVAL_MS = 16;
+      const totalFrames = Math.ceil(ANIMATION_DURATION_MS / FRAME_INTERVAL_MS);
+      let frame = 0;
+
+      function animate() {
+        frame++;
+        const t = Math.min(frame / totalFrames, 1);
+        // Ease-out cubic
+        const ease = 1 - Math.pow(1 - t, 3);
+
+        for (let i = 0; i < nodes.length; i++) {
+          const x = startPositions[i].x + (endPositions[i].x - startPositions[i].x) * ease;
+          const y = startPositions[i].y + (endPositions[i].y - startPositions[i].y) * ease;
+          moveNode(i, x, y);
+        }
+
+        if (t < 1) requestAnimationFrame(animate);
+      }
+      requestAnimationFrame(animate);
+    }
+
+    // ---- Event handlers ----
+    svg.addEventListener('mousedown', (e) => {
+      if (e.target === svg || e.target.tagName === 'line') {
+        const pt = svgPoint(e);
+        if (mode === 'add') {
+          addNode(pt.x, pt.y);
+        } else if (mode === 'connect') {
+          // Clicked empty space, deselect
+          connectSource = null;
+          deselectAll();
+          removePreview();
+        }
+      }
+    });
+
+    svg.addEventListener('mousemove', (e) => {
+      const pt = svgPoint(e);
+      if (mode === 'connect' && connectSource !== null) {
+        if (!previewLine) {
+          previewLine = document.createElementNS(ns, 'line');
+          previewLine.classList.add('edge-preview');
+          svg.appendChild(previewLine);
+        }
+        previewLine.setAttribute('x1', nodes[connectSource].x);
+        previewLine.setAttribute('y1', nodes[connectSource].y);
+        previewLine.setAttribute('x2', pt.x);
+        previewLine.setAttribute('y2', pt.y);
+      }
+      if (dragNode !== null) {
+        moveNode(dragNode, pt.x + dragOffset.x, pt.y + dragOffset.y);
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      dragNode = null;
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'm' || e.key === 'M') {
+        const idx = (MODES.indexOf(mode) + 1) % MODES.length;
+        setMode(MODES[idx]);
+      }
+      if (e.key === ' ') { e.preventDefault(); runLayout(); }
+      if (e.key === 'Delete' || e.key === 'Backspace') clearAll();
+    });
+
+    modeBtn.addEventListener('click', () => {
+      const idx = (MODES.indexOf(mode) + 1) % MODES.length;
+      setMode(MODES[idx]);
+    });
+
+    document.getElementById('layoutBtn').addEventListener('click', runLayout);
+    document.getElementById('clearBtn').addEventListener('click', clearAll);
+
+    // ---- Init ----
+    async function start() {
+      await init();
+      wasmReady = true;
+      document.getElementById('loading').remove();
+
+      // Seed with a small starter graph
+      const STARTER_POSITIONS = [
+        [300, 300], [500, 200], [700, 300], [500, 450], [350, 500], [650, 500],
+      ];
+      const STARTER_EDGES = [[0,1],[1,2],[2,3],[3,4],[4,0],[1,3],[0,5],[5,2]];
+
+      for (const [x, y] of STARTER_POSITIONS) addNode(x, y);
+      for (const [s, t] of STARTER_EDGES) addEdge(s, t);
+
+      // Auto-layout the starter graph
+      runLayout();
+    }
+
+    start().catch(err => {
+      document.getElementById('loading').textContent = 'Error: ' + err.message;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>

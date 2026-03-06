@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>libcola-rust WASM Demos</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    header {
+      text-align: center;
+      padding: 40px 20px 20px;
+      border-bottom: 1px solid #1e293b;
+    }
+    header h1 {
+      font-size: 2rem;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    header p { color: #94a3b8; font-size: 0.95rem; }
+    .demos {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 24px;
+      max-width: 1200px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    .demo-card {
+      background: #1e293b;
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      border: 1px solid #334155;
+    }
+    .demo-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 32px rgba(96, 165, 250, 0.15);
+      border-color: #60a5fa;
+    }
+    .demo-card .preview {
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f172a;
+    }
+    .demo-card .preview svg { width: 80%; height: 80%; }
+    .demo-card .info { padding: 16px 20px; }
+    .demo-card h3 { font-size: 1.1rem; margin-bottom: 6px; color: #f1f5f9; }
+    .demo-card p { font-size: 0.85rem; color: #94a3b8; line-height: 1.5; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-right: 4px;
+    }
+    .badge-force { background: #1e3a5f; color: #60a5fa; }
+    .badge-constraint { background: #3b1f5e; color: #a78bfa; }
+    .badge-interactive { background: #1a3a2a; color: #4ade80; }
+    .badge-overlap { background: #3a2a1a; color: #fbbf24; }
+    footer {
+      text-align: center;
+      padding: 32px;
+      color: #475569;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>libcola-rust / WASM</h1>
+    <p>Constraint-based graph layout engine compiled to WebAssembly</p>
+  </header>
+
+  <div class="demos">
+    <div class="demo-card" onclick="location.href='gallery.html'">
+      <div class="preview">
+        <svg viewBox="0 0 200 160">
+          <line x1="40" y1="80" x2="100" y2="40" stroke="#475569" stroke-width="1.5"/>
+          <line x1="100" y1="40" x2="160" y2="80" stroke="#475569" stroke-width="1.5"/>
+          <line x1="40" y1="80" x2="100" y2="120" stroke="#475569" stroke-width="1.5"/>
+          <line x1="100" y1="120" x2="160" y2="80" stroke="#475569" stroke-width="1.5"/>
+          <line x1="40" y1="80" x2="160" y2="80" stroke="#475569" stroke-width="1.5"/>
+          <circle cx="40" cy="80" r="8" fill="#60a5fa"/>
+          <circle cx="100" cy="40" r="8" fill="#a78bfa"/>
+          <circle cx="160" cy="80" r="8" fill="#60a5fa"/>
+          <circle cx="100" cy="120" r="8" fill="#a78bfa"/>
+        </svg>
+      </div>
+      <div class="info">
+        <h3>Constraint Gallery</h3>
+        <p>
+          <span class="badge badge-force">Force-Directed</span>
+          <span class="badge badge-constraint">Constraints</span>
+          <span class="badge badge-overlap">Overlap Removal</span>
+        </p>
+        <p style="margin-top:8px">
+          10 interactive demos showcasing separation, alignment, distribution,
+          overlap removal, and edge-length constraints.
+        </p>
+      </div>
+    </div>
+
+    <div class="demo-card" onclick="location.href='playground.html'">
+      <div class="preview">
+        <svg viewBox="0 0 200 160">
+          <rect x="60" y="40" width="80" height="80" rx="8" fill="none" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="4"/>
+          <circle cx="80" cy="70" r="6" fill="#60a5fa"/>
+          <circle cx="120" cy="70" r="6" fill="#a78bfa"/>
+          <circle cx="100" cy="100" r="6" fill="#fbbf24"/>
+          <line x1="80" y1="70" x2="120" y2="70" stroke="#475569" stroke-width="1"/>
+          <line x1="80" y1="70" x2="100" y2="100" stroke="#475569" stroke-width="1"/>
+          <line x1="120" y1="70" x2="100" y2="100" stroke="#475569" stroke-width="1"/>
+          <text x="100" y="145" fill="#4ade80" font-size="10" text-anchor="middle">click to add nodes</text>
+        </svg>
+      </div>
+      <div class="info">
+        <h3>Interactive Playground</h3>
+        <p>
+          <span class="badge badge-interactive">Interactive</span>
+          <span class="badge badge-force">Live Layout</span>
+        </p>
+        <p style="margin-top:8px">
+          Build your own graph interactively. Click to add nodes, drag to
+          connect them. Watch the constraint engine lay them out in real-time.
+        </p>
+      </div>
+    </div>
+
+    <div class="demo-card" onclick="location.href='stress-animation.html'">
+      <div class="preview">
+        <svg viewBox="0 0 200 160">
+          <text x="100" y="50" fill="#fbbf24" font-size="11" text-anchor="middle">stress: 42.7</text>
+          <rect x="30" y="65" width="140" height="8" rx="4" fill="#1e293b"/>
+          <rect x="30" y="65" width="84" height="8" rx="4" fill="#fbbf24"/>
+          <circle cx="50" cy="110" r="5" fill="#60a5fa"/>
+          <circle cx="80" cy="95" r="5" fill="#60a5fa"/>
+          <circle cx="110" cy="115" r="5" fill="#60a5fa"/>
+          <circle cx="140" cy="100" r="5" fill="#60a5fa"/>
+          <circle cx="95" cy="130" r="5" fill="#60a5fa"/>
+          <line x1="50" y1="110" x2="80" y2="95" stroke="#475569" stroke-width="1"/>
+          <line x1="80" y1="95" x2="110" y2="115" stroke="#475569" stroke-width="1"/>
+          <line x1="110" y1="115" x2="140" y2="100" stroke="#475569" stroke-width="1"/>
+          <line x1="80" y1="95" x2="95" y2="130" stroke="#475569" stroke-width="1"/>
+        </svg>
+      </div>
+      <div class="info">
+        <h3>Stress Animation</h3>
+        <p>
+          <span class="badge badge-force">Animated</span>
+          <span class="badge badge-constraint">Stress Viz</span>
+        </p>
+        <p style="margin-top:8px">
+          Watch the stress-majorization algorithm converge in real-time.
+          Step through iterations and see how forces balance out.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    libcola-rust &mdash; Rust/WASM port of adaptagrams/libcola
+  </footer>
+</body>
+</html>
