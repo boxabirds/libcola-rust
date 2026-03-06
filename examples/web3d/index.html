@@ -152,18 +152,22 @@
         <option value="cube">Cube</option>
         <option value="cylinder">Cylinder</option>
         <option value="grid">Grid Sheet</option>
-        <option value="octahedron">Octahedron</option>
       </select>
     </div>
 
     <div class="control-group">
       <label>Detail <span class="range-value" id="detailLabel">50</span></label>
-      <input type="range" id="detail" min="6" max="200" value="50" step="1">
+      <input type="range" id="detail" min="6" max="2000" value="50" step="1">
     </div>
 
     <div class="control-group">
       <label>Edge length <span class="range-value" id="idealLengthLabel">40</span></label>
       <input type="range" id="idealLength" min="10" max="120" value="40" step="5">
+    </div>
+
+    <div class="control-group">
+      <label>Delay <span class="range-value" id="delayLabel">0ms</span></label>
+      <input type="range" id="delay" min="0" max="500" value="0" step="10">
     </div>
 
     <div class="btn-row">

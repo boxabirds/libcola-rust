@@ -2,7 +2,7 @@
 
 import { Renderer, buildFaceVertices, buildEdgeInstances } from './renderer.js';
 import { OrbitCamera } from './camera.js';
-import { icosphere, torus, cube, gridSheet, octahedron, cylinder, scramble } from './meshes.js';
+import { icosphere, torus, cube, gridSheet, cylinder, scramble } from './meshes.js';
 
 const DEFAULT_IDEAL_EDGE_LENGTH = 40;
 const DEFAULT_DETAIL = 50;
@@ -35,7 +35,6 @@ const GENERATORS = {
   cube:       (n) => cube(n),
   cylinder:   (n) => cylinder(n),
   grid:       (n) => gridSheet(n),
-  octahedron: () => octahedron(),
 };
 
 // --- Layout setup ---
@@ -171,13 +170,19 @@ async function main() {
   const detailLabel = document.getElementById('detailLabel');
   const lengthSlider = document.getElementById('idealLength');
   const lengthLabel = document.getElementById('idealLengthLabel');
+  const delaySlider = document.getElementById('delay');
+  const delayLabel = document.getElementById('delayLabel');
   const playBtn = document.getElementById('playBtn');
   const resetBtn = document.getElementById('resetBtn');
+
+  let iterationDelayMs = 0;
 
   detailSlider.value = DEFAULT_DETAIL;
   detailLabel.textContent = DEFAULT_DETAIL;
   lengthSlider.value = DEFAULT_IDEAL_EDGE_LENGTH;
   lengthLabel.textContent = DEFAULT_IDEAL_EDGE_LENGTH;
+  delaySlider.value = 0;
+  delayLabel.textContent = '0ms';
 
   function resetMesh() {
     setupLayout(
@@ -194,6 +199,10 @@ async function main() {
   });
   lengthSlider.addEventListener('input', () => {
     lengthLabel.textContent = lengthSlider.value;
+  });
+  delaySlider.addEventListener('input', () => {
+    iterationDelayMs = parseInt(delaySlider.value);
+    delayLabel.textContent = iterationDelayMs + 'ms';
   });
 
   meshSelect.addEventListener('change', resetMesh);
@@ -212,14 +221,15 @@ async function main() {
   resetMesh();
 
   // Animation loop
-  let lastTime = 0;
-  const TARGET_FRAME_MS = 16;
+  let lastStepTime = 0;
+  const MIN_FRAME_MS = 16;
 
   function frame(time) {
-    const dt = time - lastTime;
+    const sinceLast = time - lastStepTime;
+    const stepInterval = Math.max(MIN_FRAME_MS, iterationDelayMs);
 
-    if (running && !converged && dt >= TARGET_FRAME_MS) {
-      lastTime = time;
+    if (running && !converged && sinceLast >= stepInterval) {
+      lastStepTime = time;
       stepLayout();
     }
 
