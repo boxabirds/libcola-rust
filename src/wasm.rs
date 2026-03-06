@@ -431,6 +431,7 @@ impl ColaLayout {
             id,
             x,
             y,
+            z: 0.0,
             weight,
         });
     }
@@ -618,5 +619,208 @@ impl ColaLayout {
             node_count: n,
             stress,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LayoutResult3D - positions after 3D layout
+// ---------------------------------------------------------------------------
+
+/// Result of a 3D layout: [x, y, z, w, h, d] per node.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub struct LayoutResult3D {
+    data: Vec<f64>,
+    node_count: usize,
+    stress: f64,
+}
+
+#[cfg(feature = "wasm")]
+const FIELDS_PER_NODE_3D: usize = 6;
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl LayoutResult3D {
+    #[wasm_bindgen(getter, js_name = "nodeCount")]
+    pub fn node_count(&self) -> usize { self.node_count }
+
+    #[wasm_bindgen(getter)]
+    pub fn stress(&self) -> f64 { self.stress }
+
+    #[wasm_bindgen(js_name = "getX")]
+    pub fn get_x(&self, i: usize) -> f64 { self.data[i * FIELDS_PER_NODE_3D] }
+
+    #[wasm_bindgen(js_name = "getY")]
+    pub fn get_y(&self, i: usize) -> f64 { self.data[i * FIELDS_PER_NODE_3D + 1] }
+
+    #[wasm_bindgen(js_name = "getZ")]
+    pub fn get_z(&self, i: usize) -> f64 { self.data[i * FIELDS_PER_NODE_3D + 2] }
+
+    #[wasm_bindgen(js_name = "getWidth")]
+    pub fn get_width(&self, i: usize) -> f64 { self.data[i * FIELDS_PER_NODE_3D + 3] }
+
+    #[wasm_bindgen(js_name = "getHeight")]
+    pub fn get_height(&self, i: usize) -> f64 { self.data[i * FIELDS_PER_NODE_3D + 4] }
+
+    #[wasm_bindgen(js_name = "getDepth")]
+    pub fn get_depth(&self, i: usize) -> f64 { self.data[i * FIELDS_PER_NODE_3D + 5] }
+
+    #[wasm_bindgen(js_name = "getAllPositions")]
+    pub fn get_all_positions(&self) -> Vec<f64> { self.data.clone() }
+}
+
+// ---------------------------------------------------------------------------
+// ColaLayout3D - 3D layout engine for WASM
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "wasm")]
+struct LayoutNode3D {
+    x: f64,
+    y: f64,
+    z: f64,
+    width: f64,
+    height: f64,
+    depth: f64,
+}
+
+/// 3D constraint-based graph layout engine.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub struct ColaLayout3D {
+    nodes: Vec<LayoutNode3D>,
+    edges: Vec<(usize, usize)>,
+    edge_lengths: Vec<f64>,
+    ideal_edge_length: f64,
+    convergence_tolerance: f64,
+    max_iterations: usize,
+    use_runge_kutta: bool,
+    skip_distant_non_neighbours: bool,
+    /// Persistent layout for stateful runOnce.
+    inner_layout: Option<RustLayout>,
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl ColaLayout3D {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            edge_lengths: Vec::new(),
+            ideal_edge_length: WASM_DEFAULT_IDEAL_EDGE_LENGTH,
+            convergence_tolerance: WASM_DEFAULT_CONVERGENCE_TOLERANCE,
+            max_iterations: WASM_DEFAULT_MAX_ITERATIONS,
+            use_runge_kutta: true,
+            skip_distant_non_neighbours: true,
+            inner_layout: None,
+        }
+    }
+
+    #[wasm_bindgen(js_name = "addNode")]
+    pub fn add_node(&mut self, x: f64, y: f64, z: f64, w: f64, h: f64, d: f64) -> usize {
+        let idx = self.nodes.len();
+        self.nodes.push(LayoutNode3D { x, y, z, width: w, height: h, depth: d });
+        self.inner_layout = None;
+        idx
+    }
+
+    #[wasm_bindgen(js_name = "addEdge")]
+    pub fn add_edge(&mut self, source: usize, target: usize) {
+        self.edges.push((source, target));
+        self.inner_layout = None;
+    }
+
+    #[wasm_bindgen(js_name = "setIdealEdgeLength")]
+    pub fn set_ideal_edge_length(&mut self, length: f64) {
+        self.ideal_edge_length = length;
+        self.inner_layout = None;
+    }
+
+    #[wasm_bindgen(js_name = "setConvergenceTolerance")]
+    pub fn set_convergence_tolerance(&mut self, tolerance: f64) {
+        self.convergence_tolerance = tolerance;
+    }
+
+    #[wasm_bindgen(js_name = "setMaxIterations")]
+    pub fn set_max_iterations(&mut self, max: usize) {
+        self.max_iterations = max;
+    }
+
+    #[wasm_bindgen(js_name = "setRungeKutta")]
+    pub fn set_runge_kutta(&mut self, enabled: bool) {
+        self.use_runge_kutta = enabled;
+    }
+
+    #[wasm_bindgen(js_name = "setSkipDistantNonNeighbours")]
+    pub fn set_skip_distant_non_neighbours(&mut self, enabled: bool) {
+        self.skip_distant_non_neighbours = enabled;
+    }
+
+    /// Reset for new animation (clears internal layout state).
+    pub fn reset(&mut self) {
+        self.inner_layout = None;
+    }
+
+    fn ensure_layout(&mut self) {
+        if self.inner_layout.is_some() {
+            return;
+        }
+        let n = self.nodes.len();
+        let rects: Vec<RustRectangle> = self.nodes.iter().map(|nd| {
+            RustRectangle::new(
+                nd.x - nd.width / 2.0,
+                nd.x + nd.width / 2.0,
+                nd.y - nd.height / 2.0,
+                nd.y + nd.height / 2.0,
+            )
+        }).collect();
+        let z_positions: Vec<f64> = self.nodes.iter().map(|nd| nd.z).collect();
+        let el = if self.edge_lengths.is_empty() {
+            None
+        } else {
+            Some(self.edge_lengths.as_slice())
+        };
+
+        let mut layout = RustLayout::new_3d(rects, &z_positions, &self.edges, self.ideal_edge_length, el);
+        layout.set_convergence(self.convergence_tolerance, self.max_iterations);
+        layout.set_runge_kutta(self.use_runge_kutta);
+        layout.set_skip_distant_non_neighbours(self.skip_distant_non_neighbours);
+        self.inner_layout = Some(layout);
+    }
+
+    fn build_result(&self) -> LayoutResult3D {
+        let layout = self.inner_layout.as_ref().unwrap();
+        let n = self.nodes.len();
+        let bb = layout.bounding_boxes();
+        let mut data = Vec::with_capacity(n * FIELDS_PER_NODE_3D);
+        for i in 0..n {
+            data.push(layout.x()[i]);
+            data.push(layout.y()[i]);
+            data.push(layout.z()[i]);
+            data.push(bb[i].width());
+            data.push(bb[i].height());
+            data.push(self.nodes[i].depth);
+        }
+        LayoutResult3D {
+            data,
+            node_count: n,
+            stress: layout.compute_stress(None),
+        }
+    }
+
+    /// Run full layout to convergence.
+    pub fn run(&mut self) -> LayoutResult3D {
+        self.ensure_layout();
+        self.inner_layout.as_mut().unwrap().run();
+        self.build_result()
+    }
+
+    /// Run a single iteration (stateful — maintains layout between calls).
+    #[wasm_bindgen(js_name = "runOnce")]
+    pub fn run_once(&mut self) -> LayoutResult3D {
+        self.ensure_layout();
+        self.inner_layout.as_mut().unwrap().run_once(true, true);
+        self.build_result()
     }
 }

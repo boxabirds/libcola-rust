@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>libcola 3D — WebGPU Graph Layout</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      position: fixed;
+      top: 0; left: 0;
+    }
+
+    /* Loading overlay */
+    #overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f172a;
+      font-size: 1.2rem;
+      color: #94a3b8;
+      z-index: 100;
+    }
+
+    /* Controls panel */
+    #controls {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 12px;
+      padding: 20px;
+      width: 240px;
+      z-index: 10;
+      font-size: 0.85rem;
+    }
+    #controls h2 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #f1f5f9;
+      letter-spacing: 0.02em;
+    }
+    .control-group {
+      margin-bottom: 14px;
+    }
+    .control-group label {
+      display: block;
+      margin-bottom: 4px;
+      color: #94a3b8;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    select, input[type="range"] {
+      width: 100%;
+    }
+    select {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      height: 4px;
+      background: #334155;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #60a5fa;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .range-value {
+      float: right;
+      color: #60a5fa;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    button {
+      flex: 1;
+      padding: 8px 0;
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover {
+      background: #334155;
+    }
+    #status {
+      margin-top: 14px;
+      color: #64748b;
+      font-size: 0.78rem;
+      text-align: center;
+    }
+
+    /* Title */
+    #title {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      font-size: 0.75rem;
+      color: #475569;
+      z-index: 10;
+    }
+    #title a { color: #60a5fa; text-decoration: none; }
+    #title a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div id="overlay">Initializing...</div>
+
+  <div id="controls">
+    <h2>3D Graph Layout</h2>
+
+    <div class="control-group">
+      <label>Graph type</label>
+      <select id="graphType">
+        <option value="random" selected>Random</option>
+        <option value="grid">Grid</option>
+        <option value="tree">Tree</option>
+        <option value="cycle">Cycle</option>
+        <option value="dense">Dense</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>Nodes <span class="range-value" id="nodeCountLabel">30</span></label>
+      <input type="range" id="nodeCount" min="4" max="200" value="30" step="1">
+    </div>
+
+    <div class="control-group">
+      <label>Ideal edge length <span class="range-value" id="idealLengthLabel">60</span></label>
+      <input type="range" id="idealLength" min="20" max="200" value="60" step="5">
+    </div>
+
+    <div class="btn-row">
+      <button id="playBtn">Pause</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+
+    <div id="status">Ready</div>
+  </div>
+
+  <div id="title">
+    <strong>libcola-rust</strong> 3D stress majorization &middot;
+    <a href="../web/index.html">2D demos</a>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

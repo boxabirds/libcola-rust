@@ -77,17 +77,23 @@ pub struct Lock {
     pub id: usize,
     pub x: f64,
     pub y: f64,
+    pub z: f64,
 }
 
 impl Lock {
     pub fn new(id: usize, x: f64, y: f64) -> Self {
-        Self { id, x, y }
+        Self { id, x, y, z: 0.0 }
+    }
+
+    pub fn new_3d(id: usize, x: f64, y: f64, z: f64) -> Self {
+        Self { id, x, y, z }
     }
 
     pub fn pos(&self, dim: Dim) -> f64 {
         match dim {
             Dim::Horizontal => self.x,
             Dim::Vertical => self.y,
+            Dim::Depth => self.z,
         }
     }
 }
@@ -126,6 +132,7 @@ pub struct DesiredPosition {
     pub id: usize,
     pub x: f64,
     pub y: f64,
+    pub z: f64,
     pub weight: f64,
 }
 
@@ -246,8 +253,11 @@ pub enum Connectivity {
 /// C++ ref: cola::ConstrainedFDLayout
 pub struct ConstrainedFDLayout {
     n: usize,
+    /// Number of spatial dimensions (2 or 3).
+    dims: usize,
     x: Vec<f64>,
     y: Vec<f64>,
+    z: Vec<f64>,
     bounding_boxes: Vec<Rectangle>,
 
     /// All-pairs shortest path distances, scaled by ideal_edge_length.
@@ -327,8 +337,10 @@ impl ConstrainedFDLayout {
 
         let mut layout = Self {
             n,
+            dims: 2,
             x,
             y,
+            z: Vec::new(),
             bounding_boxes: rs,
             d: vec![0.0; n * n],
             g: vec![Connectivity::Disconnected; n * n],
@@ -349,6 +361,23 @@ impl ConstrainedFDLayout {
         };
 
         layout.compute_path_lengths(es);
+        layout
+    }
+
+    /// Create a new 3D constrained force-directed layout.
+    ///
+    /// `rs` are the initial bounding boxes (used for XY overlap removal only).
+    /// `z_positions` are the initial Z coordinates for each node.
+    pub fn new_3d(
+        rs: Vec<Rectangle>,
+        z_positions: &[f64],
+        es: &[Edge],
+        ideal_length: f64,
+        edge_lengths: Option<&[f64]>,
+    ) -> Self {
+        let mut layout = Self::new(rs, es, ideal_length, edge_lengths);
+        layout.dims = 3;
+        layout.z = z_positions.to_vec();
         layout
     }
 
@@ -413,6 +442,13 @@ impl ConstrainedFDLayout {
     pub fn bounding_boxes(&self) -> &[Rectangle] {
         &self.bounding_boxes
     }
+
+    /// Get X coordinates.
+    pub fn x(&self) -> &[f64] { &self.x }
+    /// Get Y coordinates.
+    pub fn y(&self) -> &[f64] { &self.y }
+    /// Get Z coordinates (empty for 2D layouts).
+    pub fn z(&self) -> &[f64] { &self.z }
 
     /// Get the D matrix (all-pairs shortest path distances * ideal_edge_length).
     pub fn d_matrix(&self) -> &[f64] {
@@ -494,6 +530,26 @@ impl ConstrainedFDLayout {
     }
 
     // -----------------------------------------------------------------------
+    // Coordinate access by dimension
+    // -----------------------------------------------------------------------
+
+    fn coords(&self, dim: Dim) -> &[f64] {
+        match dim {
+            Dim::Horizontal => &self.x,
+            Dim::Vertical => &self.y,
+            Dim::Depth => &self.z,
+        }
+    }
+
+    fn coords_mut(&mut self, dim: Dim) -> &mut Vec<f64> {
+        match dim {
+            Dim::Horizontal => &mut self.x,
+            Dim::Vertical => &mut self.y,
+            Dim::Depth => &mut self.z,
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Main layout loop
     // -----------------------------------------------------------------------
 
@@ -541,7 +597,7 @@ impl ConstrainedFDLayout {
                 }
             }
 
-            let big_n = 2 * self.n;
+            let big_n = self.dims * self.n;
             let mut x0 = vec![0.0; big_n];
             self.get_position(&mut x0);
 
@@ -554,7 +610,7 @@ impl ConstrainedFDLayout {
                     .unwrap_or_default();
 
                 let mut a = vec![0.0; big_n];
-                self.compute_descent_vector_on_both_axes(
+                self.compute_descent_vector_on_all_axes(
                     x_axis, y_axis, stress, &x0, &mut a, &locks,
                 );
 
@@ -565,7 +621,7 @@ impl ConstrainedFDLayout {
                 }
 
                 let mut b = vec![0.0; big_n];
-                self.compute_descent_vector_on_both_axes(
+                self.compute_descent_vector_on_all_axes(
                     x_axis, y_axis, stress, &ia, &mut b, &locks,
                 );
 
@@ -576,12 +632,12 @@ impl ConstrainedFDLayout {
                 }
 
                 let mut c = vec![0.0; big_n];
-                self.compute_descent_vector_on_both_axes(
+                self.compute_descent_vector_on_all_axes(
                     x_axis, y_axis, stress, &ib, &mut c, &locks,
                 );
 
                 let mut dd = vec![0.0; big_n];
-                self.compute_descent_vector_on_both_axes(
+                self.compute_descent_vector_on_all_axes(
                     x_axis, y_axis, stress, &c, &mut dd, &locks,
                 );
 
@@ -594,7 +650,7 @@ impl ConstrainedFDLayout {
                     .as_ref()
                     .map(|p| p.locks().to_vec())
                     .unwrap_or_default();
-                self.compute_descent_vector_on_both_axes(
+                self.compute_descent_vector_on_all_axes(
                     x_axis, y_axis, stress, &x0, &mut x1, &locks,
                 );
             }
@@ -619,7 +675,7 @@ impl ConstrainedFDLayout {
         }
 
         let stress = f64::MAX;
-        let big_n = 2 * self.n;
+        let big_n = self.dims * self.n;
         let mut x0 = vec![0.0; big_n];
         self.get_position(&mut x0);
 
@@ -627,7 +683,7 @@ impl ConstrainedFDLayout {
 
         if self.runge_kutta {
             let mut a = vec![0.0; big_n];
-            self.compute_descent_vector_on_both_axes(
+            self.compute_descent_vector_on_all_axes(
                 x_axis, y_axis, stress, &x0, &mut a, &locks,
             );
 
@@ -637,7 +693,7 @@ impl ConstrainedFDLayout {
             }
 
             let mut b = vec![0.0; big_n];
-            self.compute_descent_vector_on_both_axes(
+            self.compute_descent_vector_on_all_axes(
                 x_axis, y_axis, stress, &ia, &mut b, &locks,
             );
 
@@ -647,12 +703,12 @@ impl ConstrainedFDLayout {
             }
 
             let mut c = vec![0.0; big_n];
-            self.compute_descent_vector_on_both_axes(
+            self.compute_descent_vector_on_all_axes(
                 x_axis, y_axis, stress, &ib, &mut c, &locks,
             );
 
             let mut dd = vec![0.0; big_n];
-            self.compute_descent_vector_on_both_axes(
+            self.compute_descent_vector_on_all_axes(
                 x_axis, y_axis, stress, &c, &mut dd, &locks,
             );
 
@@ -663,7 +719,7 @@ impl ConstrainedFDLayout {
             self.set_position(&x1, None);
         } else {
             let mut x1 = vec![0.0; big_n];
-            self.compute_descent_vector_on_both_axes(
+            self.compute_descent_vector_on_all_axes(
                 x_axis, y_axis, stress, &x0, &mut x1, &locks,
             );
             self.set_position(&x1, None);
@@ -679,6 +735,11 @@ impl ConstrainedFDLayout {
             pos[i] = self.x[i];
             pos[i + self.n] = self.y[i];
         }
+        if self.dims == 3 {
+            for i in 0..self.n {
+                pos[i + 2 * self.n] = self.z[i];
+            }
+        }
     }
 
     fn set_position(&mut self, pos: &[f64], pre_iteration: Option<&dyn PreIteration>) {
@@ -688,6 +749,9 @@ impl ConstrainedFDLayout {
 
         self.move_to(Dim::Horizontal, pos, &locks);
         self.move_to(Dim::Vertical, pos, &locks);
+        if self.dims == 3 {
+            self.move_to(Dim::Depth, pos, &locks);
+        }
     }
 
     fn move_bounding_boxes(&mut self) {
@@ -700,7 +764,7 @@ impl ConstrainedFDLayout {
     // Descent vector computation
     // -----------------------------------------------------------------------
 
-    fn compute_descent_vector_on_both_axes(
+    fn compute_descent_vector_on_all_axes(
         &mut self,
         x_axis: bool,
         y_axis: bool,
@@ -714,6 +778,11 @@ impl ConstrainedFDLayout {
             self.x[i] = x0[i];
             self.y[i] = x0[i + self.n];
         }
+        if self.dims == 3 {
+            for i in 0..self.n {
+                self.z[i] = x0[i + 2 * self.n];
+            }
+        }
         self.move_bounding_boxes();
 
         if x_axis {
@@ -721,6 +790,9 @@ impl ConstrainedFDLayout {
         }
         if y_axis {
             self.apply_forces_and_constraints(Dim::Vertical, stress, locks);
+        }
+        if self.dims == 3 {
+            self.apply_forces_and_constraints(Dim::Depth, stress, locks);
         }
 
         self.get_position(x1);
@@ -757,11 +829,7 @@ impl ConstrainedFDLayout {
         let h = SparseMatrix::from_sparse_map(&h_map);
 
         // Save old coords.
-        let coords = match dim {
-            Dim::Horizontal => &self.x,
-            Dim::Vertical => &self.y,
-        };
-        let old_coords = coords.to_vec();
+        let old_coords = self.coords(dim).to_vec();
 
         // Compute initial step size and apply descent.
         // The optimal quadratic step g'g/(g'Hg) can be very large when the
@@ -780,12 +848,8 @@ impl ConstrainedFDLayout {
         self.apply_descent_vector(&g, &old_coords, dim, old_stress, step);
 
         // Set variable desired positions.
-        let coords = match dim {
-            Dim::Horizontal => &self.x,
-            Dim::Vertical => &self.y,
-        };
         for i in 0..n.min(vars.len()) {
-            vars[i] = Variable::new(i, coords[i], DEFAULT_VAR_WEIGHT, 1.0);
+            vars[i] = Variable::new(i, self.coords(dim)[i], DEFAULT_VAR_WEIGHT, 1.0);
         }
         for &(id, pos) in &des {
             if id < vars.len() {
@@ -802,21 +866,14 @@ impl ConstrainedFDLayout {
         let _ = solver.solve();
         let positions = solver.final_positions();
         {
-            let coords = match dim {
-                Dim::Horizontal => &mut self.x,
-                Dim::Vertical => &mut self.y,
-            };
+            let coords = self.coords_mut(dim);
             for i in 0..n.min(positions.len()) {
                 coords[i] = positions[i];
             }
         }
 
         // Compute beta for step limiting.
-        let coords = match dim {
-            Dim::Horizontal => &self.x,
-            Dim::Vertical => &self.y,
-        };
-        let d: Vec<f64> = (0..n).map(|i| old_coords[i] - coords[i]).collect();
+        let d: Vec<f64> = (0..n).map(|i| old_coords[i] - self.coords(dim)[i]).collect();
         let stepsize = self.compute_step_size(&h, &g, &d);
         let stepsize = stepsize.max(0.0).min(1.0);
 
@@ -855,7 +912,8 @@ impl ConstrainedFDLayout {
                 // Randomly displace coincident nodes.
                 let mut rx = self.x[u] - self.x[v];
                 let mut ry = self.y[u] - self.y[v];
-                let mut sd2 = rx * rx + ry * ry;
+                let mut rz = if self.dims == 3 { self.z[u] - self.z[v] } else { 0.0 };
+                let mut sd2 = rx * rx + ry * ry + rz * rz;
                 let mut max_displaces = n;
 
                 while max_displaces > 0 {
@@ -865,9 +923,13 @@ impl ConstrainedFDLayout {
                     let rd = self.offset_dir();
                     self.x[v] += rd.0;
                     self.y[v] += rd.1;
+                    if self.dims == 3 {
+                        self.z[v] += rd.2;
+                    }
                     rx = self.x[u] - self.x[v];
                     ry = self.y[u] - self.y[v];
-                    sd2 = rx * rx + ry * ry;
+                    rz = if self.dims == 3 { self.z[u] - self.z[v] } else { 0.0 };
+                    sd2 = rx * rx + ry * ry + rz * rz;
                     max_displaces -= 1;
                 }
 
@@ -890,14 +952,18 @@ impl ConstrainedFDLayout {
                 let d2 = d * d;
                 let l_safe = if l < NEAR_ZERO { MIN_DISTANCE } else { l };
 
-                let (dx, dy) = match dim {
-                    Dim::Horizontal => (rx, ry),
-                    Dim::Vertical => (ry, rx),
+                // Component along current dimension; perpendicular squared
+                // distance generalizes the 2D dy² to work in 2D and 3D.
+                let dx = match dim {
+                    Dim::Horizontal => rx,
+                    Dim::Vertical => ry,
+                    Dim::Depth => rz,
                 };
+                let perp_sq = sd2 - dx * dx;
 
                 g[u] += dx * (l_safe - d) / (d2 * l_safe);
 
-                let h_uv = (d * dy * dy / (l_safe * l_safe * l_safe) - 1.0) / d2;
+                let h_uv = (d * perp_sq / (l_safe * l_safe * l_safe) - 1.0) / d2;
                 h.set(u, v, h_uv);
                 h_uu -= h_uv;
             }
@@ -911,6 +977,7 @@ impl ConstrainedFDLayout {
             let d_val = match dim {
                 Dim::Horizontal => dp.x - self.x[i],
                 Dim::Vertical => dp.y - self.y[i],
+                Dim::Depth => if self.dims == 3 { dp.z - self.z[i] } else { 0.0 },
             };
             g[i] -= d_val * dp.weight;
             let current = h.get(i, i);
@@ -945,10 +1012,7 @@ impl ConstrainedFDLayout {
         _old_stress: f64,
         stepsize: f64,
     ) {
-        let coords = match dim {
-            Dim::Horizontal => &mut self.x,
-            Dim::Vertical => &mut self.y,
-        };
+        let coords = self.coords_mut(dim);
 
         if stepsize.abs() > STEPSIZE_MIN {
             for i in 0..coords.len().min(d.len()) {
@@ -963,17 +1027,24 @@ impl ConstrainedFDLayout {
     /// Compute random offset for displacing coincident nodes.
     ///
     /// C++ ref: ConstrainedFDLayout::offsetDir
-    fn offset_dir(&mut self) -> (f64, f64) {
+    fn offset_dir(&mut self) -> (f64, f64, f64) {
         let mut ux = self.random.get_next_between(RANDOM_OFFSET_MIN, RANDOM_OFFSET_MAX)
             - RANDOM_OFFSET_CENTER;
         let mut uy = self.random.get_next_between(RANDOM_OFFSET_MIN, RANDOM_OFFSET_MAX)
             - RANDOM_OFFSET_CENTER;
-        let l = (ux * ux + uy * uy).sqrt();
+        let mut uz = if self.dims == 3 {
+            self.random.get_next_between(RANDOM_OFFSET_MIN, RANDOM_OFFSET_MAX)
+                - RANDOM_OFFSET_CENTER
+        } else {
+            0.0
+        };
+        let l = (ux * ux + uy * uy + uz * uz).sqrt();
         if l > 0.0 {
             ux *= self.min_d / l;
             uy *= self.min_d / l;
+            uz *= self.min_d / l;
         }
-        (ux, uy)
+        (ux, uy, uz)
     }
 
     // -----------------------------------------------------------------------
@@ -1002,7 +1073,8 @@ impl ConstrainedFDLayout {
 
                 let rx = self.x[u] - self.x[v];
                 let ry = self.y[u] - self.y[v];
-                let l = (rx * rx + ry * ry).sqrt();
+                let rz = if self.dims == 3 { self.z[u] - self.z[v] } else { 0.0 };
+                let l = (rx * rx + ry * ry + rz * rz).sqrt();
                 let d = self.d[u * n + v];
 
                 // C++ ref: if(l>d && p>1) continue;
@@ -1023,7 +1095,8 @@ impl ConstrainedFDLayout {
             for lock in pre.locks() {
                 let dx = lock.x - self.x[lock.id];
                 let dy = lock.y - self.y[lock.id];
-                stress += LOCK_WEIGHT * (dx * dx + dy * dy);
+                let dz = if self.dims == 3 { lock.z - self.z[lock.id] } else { 0.0 };
+                stress += LOCK_WEIGHT * (dx * dx + dy * dy + dz * dz);
             }
         }
 
@@ -1031,7 +1104,8 @@ impl ConstrainedFDLayout {
         for dp in &self.desired_positions {
             let dx = self.x[dp.id] - dp.x;
             let dy = self.y[dp.id] - dp.y;
-            stress += DESIRED_POSITION_STRESS_FACTOR * dp.weight * (dx * dx + dy * dy);
+            let dz = if self.dims == 3 { self.z[dp.id] - dp.z } else { 0.0 };
+            stress += DESIRED_POSITION_STRESS_FACTOR * dp.weight * (dx * dx + dy * dy + dz * dz);
         }
 
         stress
@@ -1056,6 +1130,7 @@ impl ConstrainedFDLayout {
         let offset = match dim {
             Dim::Horizontal => 0,
             Dim::Vertical => n,
+            Dim::Depth => 2 * n,
         };
 
         let mut all_vars = vars;
@@ -1076,10 +1151,7 @@ impl ConstrainedFDLayout {
         let _ = solver.solve();
         let positions = solver.final_positions();
 
-        let coords = match dim {
-            Dim::Horizontal => &mut self.x,
-            Dim::Vertical => &mut self.y,
-        };
+        let coords = self.coords_mut(dim);
         for i in 0..n.min(positions.len()) {
             coords[i] = positions[i];
         }
@@ -1096,10 +1168,7 @@ impl ConstrainedFDLayout {
     /// C++ ref: setupVarsAndConstraints
     fn setup_vars_and_constraints(&self, dim: Dim) -> (Vec<Variable>, Vec<Constraint>) {
         let n = self.n;
-        let coords = match dim {
-            Dim::Horizontal => &self.x,
-            Dim::Vertical => &self.y,
-        };
+        let coords = self.coords(dim);
 
         let vars: Vec<Variable> = (0..n)
             .map(|i| Variable::new(i, coords[i], DEFAULT_VAR_WEIGHT, 1.0))
@@ -1138,11 +1207,15 @@ impl ConstrainedFDLayout {
 
         // Generate non-overlap constraints if enabled.
         if self.generate_non_overlap {
-            let (_, noc) = match dim {
-                Dim::Horizontal => generate_x_constraints(&self.bounding_boxes, false),
-                Dim::Vertical => generate_y_constraints(&self.bounding_boxes),
+            // Overlap removal is 2D only; no Z-axis overlap constraints.
+            let noc_opt = match dim {
+                Dim::Horizontal => Some(generate_x_constraints(&self.bounding_boxes, false)),
+                Dim::Vertical => Some(generate_y_constraints(&self.bounding_boxes)),
+                Dim::Depth => None,
             };
-            constraints.extend(noc);
+            if let Some((_, noc)) = noc_opt {
+                constraints.extend(noc);
+            }
         }
 
         // Extra compound constraints (cluster containment).
@@ -1315,6 +1388,7 @@ pub fn project_onto_ccs(
             let pos = match dim {
                 Dim::Horizontal => rs[i].centre_x(),
                 Dim::Vertical => rs[i].centre_y(),
+                Dim::Depth => 0.0,
             };
             Variable::new(i, pos, DEFAULT_VAR_WEIGHT, 1.0)
         })
@@ -1334,11 +1408,14 @@ pub fn project_onto_ccs(
 
     // Generate non-overlap constraints if requested.
     if prevent_overlaps {
-        let (_, noc) = match dim {
-            Dim::Horizontal => generate_x_constraints(rs, false),
-            Dim::Vertical => generate_y_constraints(rs),
+        let noc_opt = match dim {
+            Dim::Horizontal => Some(generate_x_constraints(rs, false)),
+            Dim::Vertical => Some(generate_y_constraints(rs)),
+            Dim::Depth => None,
         };
-        constraints.extend(noc);
+        if let Some((_, noc)) = noc_opt {
+            constraints.extend(noc);
+        }
     }
 
     let result = solve_constraints(vars, constraints);
@@ -1837,9 +1914,9 @@ mod tests {
         let es = vec![(0, 1)];
         let mut layout = ConstrainedFDLayout::new(rs, &es, 100.0, None);
 
-        let (dx, dy) = layout.offset_dir();
+        let (dx, dy, dz) = layout.offset_dir();
         assert!(dx != 0.0 || dy != 0.0, "Offset should be nonzero");
-        let magnitude = (dx * dx + dy * dy).sqrt();
+        let magnitude = (dx * dx + dy * dy + dz * dz).sqrt();
         assert!(
             (magnitude - layout.min_d).abs() < TOL,
             "Offset magnitude {} should equal min_d {}",
@@ -1907,6 +1984,7 @@ mod tests {
             id: 0,
             x: 100.0,
             y: 100.0,
+            z: 0.0,
             weight: 1.0,
         }]);
 
@@ -2509,5 +2587,119 @@ mod tests {
 
         let crossings = count_edge_crossings(&layout.x, &layout.y, &edges);
         assert_eq!(crossings, 0, "Circular-init 12-cycle should have 0 crossings");
+    }
+
+    // ---- Category 25: 3D layout tests ----
+
+    #[test]
+    fn test_3d_constructor() {
+        let rs = vec![rect(0.0, 0.0, 10.0, 10.0), rect(50.0, 0.0, 10.0, 10.0)];
+        let z = vec![0.0, 100.0];
+        let es = vec![(0, 1)];
+        let layout = ConstrainedFDLayout::new_3d(rs, &z, &es, 80.0, None);
+
+        assert_eq!(layout.dims, 3);
+        assert_eq!(layout.z.len(), 2);
+        assert_eq!(layout.z[0], 0.0);
+        assert_eq!(layout.z[1], 100.0);
+    }
+
+    #[test]
+    fn test_3d_stress_includes_z() {
+        // Two nodes separated only in Z: stress should reflect Z distance.
+        let rs = vec![rect(0.0, 0.0, 10.0, 10.0), rect(0.0, 0.0, 10.0, 10.0)];
+        let z = vec![0.0, 200.0];
+        let es = vec![(0, 1)];
+        let layout = ConstrainedFDLayout::new_3d(rs, &z, &es, 80.0, None);
+
+        let stress = layout.compute_stress(None);
+        assert!(stress > 0.0, "3D stress should be > 0 for non-ideal distance");
+
+        // Compare with 2D version where nodes are coincident: stress should differ.
+        let rs2 = vec![rect(0.0, 0.0, 10.0, 10.0), rect(0.0, 0.0, 10.0, 10.0)];
+        let layout2d = ConstrainedFDLayout::new(rs2, &es, 80.0, None);
+        let stress2d = layout2d.compute_stress(None);
+
+        assert!(
+            (stress - stress2d).abs() > 0.01,
+            "3D stress ({}) should differ from 2D stress ({}) when Z varies",
+            stress, stress2d,
+        );
+    }
+
+    #[test]
+    fn test_3d_run_converges() {
+        // Tetrahedron: 4 nodes, 6 edges.
+        let n = 4;
+        let ideal = 80.0;
+        let rs = vec![
+            rect(0.0, 0.0, 10.0, 10.0),
+            rect(100.0, 0.0, 10.0, 10.0),
+            rect(50.0, 100.0, 10.0, 10.0),
+            rect(50.0, 50.0, 10.0, 10.0),
+        ];
+        let z = vec![0.0, 0.0, 0.0, 80.0];
+        let edges: Vec<Edge> = vec![(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+
+        let mut layout = ConstrainedFDLayout::new_3d(rs, &z, &edges, ideal, None);
+        layout.set_convergence(1e-6, 500);
+
+        let initial_stress = layout.compute_stress(None);
+        layout.run();
+        let final_stress = layout.compute_stress(None);
+
+        assert!(
+            final_stress < initial_stress,
+            "3D tetrahedron stress should decrease: {:.2} -> {:.2}",
+            initial_stress, final_stress,
+        );
+
+        // All edges should be within 40% of ideal.
+        for &(s, t) in &edges {
+            let dx = layout.x[s] - layout.x[t];
+            let dy = layout.y[s] - layout.y[t];
+            let dz = layout.z[s] - layout.z[t];
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+            assert!(
+                (dist - ideal).abs() < ideal * 0.4,
+                "3D edge {}-{}: distance {:.1}, expected ~{:.1}",
+                s, t, dist, ideal,
+            );
+        }
+    }
+
+    #[test]
+    fn test_3d_position_packing() {
+        let rs = vec![rect(10.0, 20.0, 5.0, 5.0), rect(30.0, 40.0, 5.0, 5.0)];
+        let z = vec![50.0, 60.0];
+        let es = vec![(0, 1)];
+        let layout = ConstrainedFDLayout::new_3d(rs, &z, &es, 80.0, None);
+
+        let mut pos = vec![0.0; 6]; // 3 dims * 2 nodes
+        layout.get_position(&mut pos);
+
+        // [x0, x1, y0, y1, z0, z1]
+        assert!((pos[0] - 10.0).abs() < 0.01); // centre of rect(10, 20, 5, 5) x
+        assert!((pos[1] - 30.0).abs() < 0.01);
+        assert!((pos[2] - 20.0).abs() < 0.01); // y
+        assert!((pos[3] - 40.0).abs() < 0.01);
+        assert!((pos[4] - 50.0).abs() < 0.01); // z
+        assert!((pos[5] - 60.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_2d_unchanged_by_3d_code() {
+        // Verify 2D constructor still works exactly as before.
+        let rs = vec![rect(0.0, 0.0, 10.0, 10.0), rect(50.0, 0.0, 10.0, 10.0)];
+        let es = vec![(0, 1)];
+        let layout = ConstrainedFDLayout::new(rs, &es, 80.0, None);
+
+        assert_eq!(layout.dims, 2);
+        assert!(layout.z.is_empty());
+
+        let mut pos = vec![0.0; 4]; // 2 dims * 2 nodes
+        layout.get_position(&mut pos);
+        assert!(pos[0].is_finite());
+        assert!(pos[1].is_finite());
     }
 }

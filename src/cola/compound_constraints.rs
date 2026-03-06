@@ -544,6 +544,7 @@ fn generate_vars_page_boundary(
     let d = match dim {
         Dim::Horizontal => 0,
         Dim::Vertical => 1,
+        Dim::Depth => 2,
     };
 
     let left_idx = num_existing_vars;
@@ -703,6 +704,7 @@ fn gen_cs_page_boundary(c: &PageBoundaryConstraint, dim: Dim) -> Vec<GeneratedCo
     let d = match dim {
         Dim::Horizontal => 0,
         Dim::Vertical => 1,
+        Dim::Depth => 2,
     };
 
     let left_var = match c.left_var[d] {

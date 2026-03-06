@@ -19,14 +19,16 @@ const EXTRA_GAP: f64 = 1e-3;
 pub enum Dim {
     Horizontal = 0,
     Vertical = 1,
+    Depth = 2,
 }
 
 impl Dim {
-    /// Returns the conjugate dimension.
+    /// Returns the conjugate dimension (2D only).
     pub fn conjugate(self) -> Dim {
         match self {
             Dim::Horizontal => Dim::Vertical,
             Dim::Vertical => Dim::Horizontal,
+            Dim::Depth => Dim::Horizontal,
         }
     }
 }
@@ -90,6 +92,7 @@ impl Rectangle {
         match d {
             Dim::Horizontal => self.get_min_x(),
             Dim::Vertical => self.get_min_y(),
+            Dim::Depth => 0.0,
         }
     }
 
@@ -97,6 +100,7 @@ impl Rectangle {
         match d {
             Dim::Horizontal => self.get_max_x(),
             Dim::Vertical => self.get_max_y(),
+            Dim::Depth => 0.0,
         }
     }
 
@@ -104,6 +108,7 @@ impl Rectangle {
         match d {
             Dim::Horizontal => self.min_x = val,
             Dim::Vertical => self.min_y = val,
+            Dim::Depth => {} // Rectangles are 2D; Z is a no-op.
         }
     }
 
@@ -111,6 +116,7 @@ impl Rectangle {
         match d {
             Dim::Horizontal => self.max_x = val,
             Dim::Vertical => self.max_y = val,
+            Dim::Depth => {}
         }
     }
 
@@ -121,6 +127,7 @@ impl Rectangle {
         match d {
             Dim::Horizontal => self.width(),
             Dim::Vertical => self.height(),
+            Dim::Depth => 0.0,
         }
     }
 
@@ -151,6 +158,7 @@ impl Rectangle {
         match d {
             Dim::Horizontal => self.move_centre_x(p),
             Dim::Vertical => self.move_centre_y(p),
+            Dim::Depth => {} // Rectangles are 2D; Z is a no-op.
         }
     }
 
@@ -202,6 +210,7 @@ impl Rectangle {
         match d {
             Dim::Horizontal => self.overlap_x(other),
             Dim::Vertical => self.overlap_y(other),
+            Dim::Depth => 0.0,
         }
     }
 
@@ -244,6 +253,7 @@ impl Rectangle {
                 self.min_y = min;
                 self.max_y = max;
             }
+            Dim::Depth => {}
         }
     }
 
